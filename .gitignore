@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secretos
+.env
+
+# Node / frontend
+node_modules/
+dist/
+
+# Editor y sistema
+.vscode/
+.DS_Store
+
+# Modelos y datos pesados
+*.bin
+*.pt
+data/
