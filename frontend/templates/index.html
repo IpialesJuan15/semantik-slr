@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="eyebrow">TU INVESTIGACIÓN, EN UN SOLO LUGAR</div>
+<div class="heading"><div><h1>Mis revisiones</h1><p>Define una pregunta. Organiza los criterios. Construye tu revisión.</p></div><a class="button" href="/reviews/new">+ Nueva revisión</a></div>
+<div class="summary"><div><strong>{{ reviews|length }}</strong><span>Revisiones registradas</span></div><div><strong>01</strong><span>Etapa actual: definir el protocolo</span></div></div>
+{% if reviews %}
+<div class="section-heading"><h2>Tu biblioteca</h2><span>Más recientes primero</span></div>
+<div class="cards">{% for review in reviews %}<article class="card"><span class="badge">Protocolo registrado</span><h2><a href="/reviews/{{ review.id }}">{{ review.title }}</a></h2><p class="preview">{{ review.question }}</p><div class="card-bottom"><span>{{ review.created_at[:10] }}</span><a href="/reviews/{{ review.id }}" aria-label="Abrir revisión: {{ review.title }}">Ver revisión →</a></div></article>{% endfor %}</div>
+{% else %}
+<section class="empty"><div class="empty-icon" aria-hidden="true">⌕</div><h2>Tu primera revisión empieza aquí</h2><p>Registra el tema que investigarás y los criterios que usarás para seleccionar artículos.</p><a class="button" href="/reviews/new">Crear mi primera revisión →</a></section>
+{% endif %}
+<div class="notice"><strong>Estamos preparando el punto de partida.</strong> Esta versión permite registrar y consultar protocolos. La búsqueda de artículos, el análisis con IA y los reportes se incorporarán en próximas entregas.</div>
+{% endblock %}

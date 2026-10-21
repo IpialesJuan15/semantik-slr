@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Nueva revisión{% endblock %}
+{% block content %}
+<a class="back" href="/">← Mis revisiones</a><div class="eyebrow">PASO 01 · PROTOCOLO</div><h1>Nueva revisión</h1><p class="intro">Define qué quieres investigar y qué estudios podrán formar parte de tu revisión.</p>
+{% if errors %}<div class="error-summary" role="alert">Revisa los campos señalados. Tus respuestas se han conservado.</div>{% endif %}
+<form method="post" action="/reviews" class="form-panel">
+{% set fields = [('title', 'Título de la revisión', 'Ejemplo: Inteligencia artificial en educación superior', 200, 'Usa un título que identifique el tema de tu revisión.'), ('question', 'Pregunta de investigación', 'Ejemplo: ¿Cómo se utiliza la inteligencia artificial para apoyar el aprendizaje universitario?', 2000, 'Escribe la pregunta que guiará la selección de estudios.'), ('inclusion', 'Criterios de inclusión', 'Ejemplo: Estudios con estudiantes universitarios.', 10000, 'Escribe un criterio por línea. Describe qué debe cumplir un artículo.'), ('exclusion', 'Criterios de exclusión', 'Ejemplo: Estudios centrados exclusivamente en educación escolar.', 10000, 'Escribe un criterio por línea. Describe qué dejaría fuera a un artículo.')] %}
+{% for name, label, placeholder, limit, hint in fields %}
+<div class="field"><label for="{{ name }}">{{ label }} <span aria-hidden="true">*</span></label><p id="{{ name }}-hint" class="hint">{{ hint }}</p>
+{% if name == 'title' %}<input id="{{ name }}" name="{{ name }}" value="{{ values.get(name, '') }}" maxlength="{{ limit }}" placeholder="{{ placeholder }}" required aria-describedby="{{ name }}-hint{% if errors.get(name) %} {{ name }}-error{% endif %}" {% if errors.get(name) %}aria-invalid="true"{% endif %}>
+{% else %}<textarea id="{{ name }}" name="{{ name }}" rows="4" maxlength="{{ limit }}" placeholder="{{ placeholder }}" required aria-describedby="{{ name }}-hint{% if errors.get(name) %} {{ name }}-error{% endif %}" {% if errors.get(name) %}aria-invalid="true"{% endif %}>{{ values.get(name, '') }}</textarea>{% endif %}
+{% if errors.get(name) %}<p class="field-error" id="{{ name }}-error">{{ errors[name] }}</p>{% endif %}</div>
+{% endfor %}
+<div class="form-note">Los ejemplos son orientativos. Para tu estudio definitivo, utiliza la pregunta y los criterios de la revisión base seleccionada.</div>
+<div class="form-actions"><a class="secondary" href="/">Cancelar</a><button class="button" type="submit">Guardar revisión →</button></div>
+</form>
+{% endblock %}

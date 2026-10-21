@@ -19,3 +19,5 @@ dist/
 *.bin
 *.pt
 data/
+.local/
+.pytest_cache/

@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}{{ review.title }}{% endblock %}
+{% block content %}
+<a class="back" href="/">← Mis revisiones</a><div class="eyebrow">REVISIÓN #{{ review.id }}</div><h1>{{ review.title }}</h1><div class="detail-meta"><span class="badge">Protocolo registrado</span><span>Registrada el {{ review.created_at[:10] }}</span></div>
+<section class="detail-panel"><h2>Pregunta de investigación</h2><p class="preserve question">{{ review.question }}</p></section>
+<div class="criteria-grid"><section class="detail-panel"><h2><span class="criterion-marker">+</span> Criterios de inclusión</h2><ul>{% for line in review.inclusion.splitlines() %}{% if line.strip() %}<li>{{ line }}</li>{% endif %}{% endfor %}</ul></section><section class="detail-panel"><h2><span class="criterion-marker exclude">−</span> Criterios de exclusión</h2><ul>{% for line in review.exclusion.splitlines() %}{% if line.strip() %}<li>{{ line }}</li>{% endif %}{% endfor %}</ul></section></div>
+<div class="notice"><strong>Tu protocolo está guardado.</strong> Puedes volver a consultarlo desde Mis revisiones. La búsqueda de artículos y su evaluación estarán disponibles en una próxima entrega.</div>
+{% endblock %}
