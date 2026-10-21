@@ -9,7 +9,6 @@ venv/
 
 # Node / frontend
 node_modules/
-dist/
 
 # Editor y sistema
 .vscode/

@@ -4,11 +4,32 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field, field_validator
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+FRONTEND_BUILD = ROOT / "frontend/dist"
+
+
+class ReviewInput(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    question: str = Field(min_length=1, max_length=2000)
+    inclusion: str = Field(min_length=1, max_length=10000)
+    exclusion: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("title", "question", "inclusion", "exclusion")
+    @classmethod
+    def required_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Completa este campo.")
+        return value
+
+
+def as_review(row):
+    return dict(row)
 
 
 def create_app(database_path=None):
@@ -40,7 +61,33 @@ def create_app(database_path=None):
 
     app = FastAPI(title="Semantik SLR", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=ROOT / "frontend/static"), name="static")
+    if FRONTEND_BUILD.exists():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_BUILD / "assets"), name="assets")
     templates = Jinja2Templates(directory=ROOT / "frontend/templates")
+
+    @app.get("/api/reviews")
+    def api_reviews():
+        with database() as connection:
+            rows = connection.execute("SELECT * FROM reviews ORDER BY id DESC").fetchall()
+        return [as_review(row) for row in rows]
+
+    @app.post("/api/reviews", status_code=201)
+    def api_create_review(payload: ReviewInput):
+        with database() as connection:
+            cursor = connection.execute(
+                "INSERT INTO reviews (title, question, inclusion, exclusion) VALUES (?, ?, ?, ?)",
+                (payload.title, payload.question, payload.inclusion, payload.exclusion),
+            )
+            row = connection.execute("SELECT * FROM reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return as_review(row)
+
+    @app.get("/api/reviews/{review_id}")
+    def api_review(review_id: int):
+        with database() as connection:
+            row = connection.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="No encontramos esa revisión.")
+        return as_review(row)
 
     @app.get("/health")
     def health():
@@ -50,12 +97,16 @@ def create_app(database_path=None):
 
     @app.get("/")
     def index(request: Request):
+        if (FRONTEND_BUILD / "index.html").exists():
+            return FileResponse(FRONTEND_BUILD / "index.html")
         with database() as connection:
             reviews = connection.execute("SELECT * FROM reviews ORDER BY id DESC").fetchall()
         return templates.TemplateResponse(request=request, name="index.html", context={"reviews": reviews})
 
     @app.get("/reviews/new")
     def new_review(request: Request):
+        if (FRONTEND_BUILD / "index.html").exists():
+            return FileResponse(FRONTEND_BUILD / "index.html")
         return templates.TemplateResponse(request=request, name="form.html", context={"values": {}, "errors": {}})
 
     @app.post("/reviews")
@@ -81,6 +132,8 @@ def create_app(database_path=None):
 
     @app.get("/reviews/{review_id}")
     def review_detail(request: Request, review_id: int):
+        if (FRONTEND_BUILD / "index.html").exists():
+            return FileResponse(FRONTEND_BUILD / "index.html")
         with database() as connection:
             review = connection.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
         if review is None:
