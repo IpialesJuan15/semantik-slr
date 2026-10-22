@@ -15,6 +15,8 @@ Se eligió ONNX multilingüe para reducir la carga de un equipo Windows con 8 GB
 
 ## Evidencia y trazabilidad
 
+Las fuentes de candidatos son OpenAlex y DOAJ. OpenAlex permite filtrar por fecha completa. DOAJ suele ofrecer solo el año; los trabajos del año de corte requieren cotejar su fecha exacta. Un HTTP 429 conserva la consulta y se informa con la espera publicada por la fuente cuando existe. OpenAlex sin clave comparte una cuota por IP; `OPENALEX_API_KEY` permite usar una cuota propia. El historial registra la fuente consultada y la tabla de artículos conserva su fuente inicial. Estas consultas no reproducen Web of Science, IEEE Xplore, SciELO y CAPES ni son exhaustivas.
+
 La evidencia se extrae de títulos/resúmenes conservando el fragmento y los offsets. La igualdad exacta valida presencia textual; no valida la interpretación ni el cumplimiento del criterio. Se conserva motor, modelo, revisión del modelo, versión del protocolo y hash del texto. No se genera un resumen narrativo ni se afirma analizar el texto completo de cada publicación.
 
 El trabajo de análisis se ejecuta en un único worker para controlar memoria. Su estado persiste y se informa una interrupción tras reiniciar. No existe todavía un planificador de búsqueda periódica. Los reportes guardan una instantánea inmutable del estado y su SHA-256. El CSV se protege frente a fórmulas al abrirlo en una hoja de cálculo.

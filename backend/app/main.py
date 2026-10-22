@@ -19,7 +19,7 @@ from pypdf import PdfReader
 from .analysis import analyze, MODEL
 from .evaluation import evaluate
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
-from .sources import identity, normalize_doi, search_openalex
+from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
 from .storage import article_json, connect, event, initialize
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +58,7 @@ class ArticleInput(BaseModel):
         return value
 
 class SearchInput(BaseModel):
+    source: Literal['openalex', 'doaj'] = 'openalex'
     query: str = Field(min_length=3, max_length=1000)
     year_from: int = Field(default=2020, ge=1800, le=2100)
     year_to: int = Field(default=2026, ge=1800, le=2100)
@@ -148,7 +149,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.3.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.4.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -302,13 +303,19 @@ def create_app(database_path=None):
             cutoff=date.fromisoformat(json.loads(base_row['snapshot'])['last_included_date'])+timedelta(days=1)
             first_date=max(first_date,cutoff)
         if first_date>date(payload.year_to,12,31): raise HTTPException(422,'El rango termina antes de la última fecha de la revisión base.')
-        try: records,total=search_openalex(payload.query,payload.year_from,payload.year_to,payload.limit,first_date)
+        source_name='OpenAlex' if payload.source=='openalex' else 'DOAJ'
+        search_source=search_openalex if payload.source=='openalex' else search_doaj
+        try: records,total=search_source(payload.query,payload.year_from,payload.year_to,payload.limit,first_date)
+        except SourceLimitError as error:
+            with connect(path) as db: event(db,review_id,'search_failed',{'request':payload.model_dump(mode='json'),'source':source_name,'reason':'rate_limit'})
+            raise HTTPException(429,str(error),headers={'Retry-After':str(error.retry_after)} if error.retry_after is not None else None) from None
         except ValueError as error:
-            with connect(path) as db: event(db,review_id,'search_failed',payload.model_dump(mode='json'))
+            with connect(path) as db: event(db,review_id,'search_failed',{'request':payload.model_dump(mode='json'),'source':source_name,'reason':'source_error'})
             raise HTTPException(502,str(error)) from None
         with connect(path) as db:
-            added=add_articles(db,review_id,records,'OpenAlex')
-            result={'source':'OpenAlex','query':payload.query,'date_from':first_date.isoformat(),'year_to':payload.year_to,'retrieved':len(records),'added':added,'duplicates':len(records)-added,'total_available':total,'limit':payload.limit,'exhaustive':False}
+            added=add_articles(db,review_id,records,source_name)
+            uncertain=sum(bool(row.get('date_uncertain')) for row in records) if payload.source=='doaj' else 0
+            result={'source':source_name,'query':payload.query,'date_from':first_date.isoformat(),'year_to':payload.year_to,'retrieved':len(records),'added':added,'duplicates':len(records)-added,'total_available':total,'limit':payload.limit,'exhaustive':False,'date_uncertain_count':uncertain}
             event(db,review_id,'search_completed',result)
         return result
 

@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.3
+# Semantik SLR · versión 0.4
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/fase-base-publicada
+git switch --track origin/feature/fuentes-doaj-openalex
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/fase-base-publicada` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/fuentes-doaj-openalex` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -25,7 +25,7 @@ Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paque
 2. Abre la revisión creada, adjunta su PDF original con texto seleccionable (hasta 8 MB/80 páginas) y coteja las preguntas, criterios, fuentes y fecha con el documento. La aplicación rechaza un PDF cuyo texto no contenga el DOI o título esperado.
 3. Corrige lo necesario y pulsa **Confirmar método de la revisión**. No hay LLM ni extracción automática de criterios todavía: los valores son una transcripción inicial, atribuida al artículo, que requiere tu validación.
 4. Explora los **31 estudios originales** de la tabla 1 y los recuentos de la tabla 2. Estos datos se guardan al crear la revisión y aparecen separados de los artículos nuevos. La tabla es una transcripción resumida; no contiene todavía el título completo, DOI y todos los campos de cada estudio original.
-5. Pulsa **Buscar estudios posteriores**. La consulta de OpenAlex empieza como mínimo el 1 de julio de 2021; elige el límite de registros, analiza candidatos y guarda tus decisiones. OpenAlex no reproduce las cuatro fuentes originales de la publicación ni garantiza cobertura exhaustiva.
+5. Pulsa **Buscar estudios posteriores**. Elige **OpenAlex** o **DOAJ**. La búsqueda empieza como mínimo el 1 de julio de 2021; elige el límite de registros, analiza candidatos y guarda tus decisiones. DOAJ a menudo informa solo el año: comprueba la fecha exacta de los registros de 2021. Ninguna de estas búsquedas reproduce las cuatro fuentes originales ni garantiza cobertura exhaustiva.
 6. Genera un reporte. El JSON guarda el estudio base y los nuevos candidatos por separado; el HTML muestra DOI, recuentos originales y decisiones nuevas.
 
 Los resultados tabulares **todavía no se actualizan automáticamente** al incluir un artículo. La siguiente fase incorporará extracción estructurada, confirmación de campos del nuevo estudio y cálculo de cambios de cada tabla.
@@ -47,7 +47,7 @@ Estado de validación de esta entrega: el conector OpenAlex recuperó artículos
 1. Crear la revisión desde el estudio publicado preparado y confirmar su método, o abrir las revisiones manuales anteriores.
 2. Editar el protocolo. Cada edición incrementa su versión, invalida el análisis anterior y señala decisiones que necesitan revisión.
 3. Importar un PDF base con texto seleccionable (hasta 8 MB y 80 páginas). La extracción recupera texto; la confirmación de pregunta y criterios sigue siendo manual. Sin OCR.
-4. Buscar en OpenAlex con consulta, años y límite de 25, 50 o 100 registros. Los resultados son de acceso abierto según la fuente. La búsqueda limitada no acredita exhaustividad.
+4. Buscar en OpenAlex o DOAJ con consulta, años y límite de 25, 50 o 100 registros. Los resultados son de acceso abierto según la fuente. La búsqueda limitada no acredita exhaustividad.
 5. Añadir artículos manualmente o importar CSV/JSON. Se omiten duplicados por DOI normalizado o título normalizado.
 6. Ejecutar comparación léxica o semántica. Revisar similitud y fragmentos exactos asociados a los criterios. La comparación trabaja con título y resumen, no con el texto completo de cada artículo.
 7. Registrar inclusión/exclusión/pendiente con un motivo. No se producen inclusiones automáticas.
@@ -59,7 +59,8 @@ Formato CSV/JSON: `title` obligatorio; opcionales `abstract`, `doi`, `year`, `au
 
 ## Servicios externos
 
-- OpenAlex: consulta HTTPS desde el backend. Si exige autenticación, configura `OPENALEX_API_KEY` en las variables del proceso y reinicia. No escribas claves en Git ni las pegues en el chat. Se comprobó una búsqueda sin clave en esta instancia.
+- OpenAlex: sin clave comparte una cuota diaria con todos los usuarios de tu IP, por lo que puedes recibir HTTP 429 aunque hayas hecho pocas búsquedas. Según su respuesta actual, una clave gratuita da una cuota propia. Puedes obtenerla en https://openalex.org/settings/api. En CMD, antes de `iniciar.bat`, usa `set "OPENALEX_API_KEY=TU_CLAVE"` en **la misma terminal**. No la escribas en archivos del repositorio ni la pegues en el chat. Reinicia el servidor después de configurarla. La aplicación solo muestra si existe una clave, nunca su valor.
+- DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. Si DOAJ informa solo el año de publicación, especialmente para 2021, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
 - Hugging Face: descarga inicial del modelo fijado; después la inferencia es local.
 - LLM generativo y Zenodo: todavía no integrados. No se requieren sus cuentas para esta entrega.
 

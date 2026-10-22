@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.4
+
+- 16 pruebas automatizadas aprobadas. Las tres nuevas verifican la transformación de registros DOAJ, el filtro anual y DOI, la selección de la fuente, la persistencia de procedencia y el manejo de HTTP 429 sin guardar resultados incompletos.
+- React/Vite compiló. En Chromium se comprobó la selección de DOAJ y el botón de búsqueda, sin errores JavaScript. La respuesta real de OpenAlex explicó que las solicitudes sin clave comparten una cuota diaria por IP y ofreció una clave gratuita con cuota propia.
+- Se cotejó la ruta y forma de resultados DOAJ con el código fuente público de su API actual (`/api/search/articles/{consulta}`, parámetros `page` y `pageSize`; `bibjson`). El proxy de esta instancia devolvió 403 al intentar `doaj.org`, por lo que la consulta real a DOAJ sigue sin verificarse aquí. Sus pruebas usan respuestas controladas, no una publicación recuperada en vivo.
+
 ## Validación adicional de la entrega 0.3
 
 - 13 pruebas automatizadas aprobadas en Python 3.12/Linux. La prueba nueva crea una revisión desde el DOI publicado, comprueba los 31 registros históricos y los recuentos originales, exige PDF y confirmación humana antes de buscar, verifica el corte del 1 de julio de 2021, comprueba que un candidato nuevo no se mezcla con los originales, verifica el reporte y la persistencia tras reiniciar.
