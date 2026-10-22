@@ -1,0 +1,26 @@
+# Validación de la entrega 0.2
+
+## Verificado
+
+- 12 pruebas automatizadas aprobadas con Python 3.12 en Linux, en un entorno virtual nuevo que contiene solo las dependencias base. Cubren persistencia y migración, validación, importación atómica, deduplicación por DOI/título, análisis léxico, offsets/citas exactas, decisiones, versiones de protocolo, reportes inmutables y su hash, CSV seguro, extracción PDF, clasificador, separación de conjuntos y errores del modelo no disponible.
+- La prueba del circuito semántico usa un codificador de prueba inyectado. Verifica las operaciones y contratos, no la calidad ni la inferencia de los pesos preentrenados.
+- Compilación React con Vite completada.
+- Prueba funcional con Chromium/Playwright: creación de revisión, registro de artículo sintético de prueba, análisis léxico, lectura de evidencia, inclusión con motivo, descarga de reporte JSON e historial. Sin errores JavaScript. Se comprobó la vista de 390 px sin desbordamiento horizontal.
+- Búsqueda real en OpenAlex mediante la API del sistema: consulta `artificial intelligence higher education`, años 2023–2026, límite 3; se recuperaron y guardaron 3 registros reales. No se presentó esta consulta como búsqueda exhaustiva.
+- El resolutor de pip confirmó paquetes binarios disponibles para Windows de 64 bits con Python 3.13, incluidos los requisitos opcionales de IA.
+- Modelo fijado a una revisión concreta; tamaños y SHA-256 de pesos y tokenizador comprobados contra la API oficial de Hugging Face. Esto verifica la configuración de la descarga, no que los archivos estén presentes ni que la inferencia funcione.
+
+## Bloqueo observado
+
+La API de Hugging Face responde y entrega metadatos. La descarga de los pesos y el tokenizador redirige a `us.aws.cdn.hf.co`, donde el proxy de este entorno devuelve 403. Se añadieron los dominios requeridos al borrador de red; el acceso efectivo al servidor final sigue pendiente. Los pesos no se han podido cargar en esta instancia y no se declara el análisis semántico real como verificado.
+
+En Windows, `activar-ia.bat` instala las dependencias y descarga los artefactos desde sus fuentes HTTPS oficiales. Se verifican sus hashes antes de cargarlos. Una vez finalizado, seleccionar Similitud semántica, analizar artículos reales y comprobar el resultado en ese equipo. Si vuelve a aparecer 403, habilitar el dominio de descarga en la red utilizada; no desactivar TLS ni cambiar los hashes.
+
+## Todavía no verificado
+
+- Ejecución de los BAT y rendimiento/memoria en el Windows del usuario.
+- Inferencia semántica real con el modelo descargado.
+- Precisión clínica/científica, recall de recuperación, F1 sobre un gold standard independiente o usabilidad con investigadores.
+- Multiusuario, despliegue público, planificador periódico, resumen generativo, Zenodo y DOI.
+
+Las métricas que calcula el programa pertenecen a las etiquetas locales y una partición exploratoria; no son resultados de validación científica de la tesis. Los registros sintéticos de las pruebas no se incluyen como datos iniciales del producto.

@@ -1,0 +1,20 @@
+# Arquitectura y decisiones
+
+React/Vite entrega la interfaz; FastAPI expone una API JSON y sirve la compilación. SQLite mantiene revisiones, artículos, decisiones vigentes, eventos, trabajos de análisis y reportes. Esta entrega es local individual y se inicia en 127.0.0.1.
+
+La migración agrega tablas y columnas sin borrar revisiones anteriores. `.local/reviews.sqlite3` y `.local/models` son privados del equipo y se excluyen de Git. Al cambiar un protocolo se conserva el historial, se invalida el análisis y se marcan decisiones previas como pendientes de revalidación. Las etiquetas de otra versión del protocolo no entrenan el clasificador.
+
+## Modelos
+
+- Semántico: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, versión ONNX cuantizada distribuida por Qdrant. Revisión fijada: `faf4aa4225822f3bc6376869cb1164e8e3feedd0`. Vector de 384 dimensiones. FastEmbed y ONNX Runtime en CPU, dos hilos, lotes de ocho. Los vectores por artículo se obtienen agregando fragmentos de título/resumen, con hasta 80 fragmentos. El tokenizador también impone una ventana máxima por fragmento.
+- Referencia léxica: TF-IDF de unigramas y bigramas, hasta 12000 características. No equivale a comprensión semántica ni a traducción entre idiomas.
+- Clasificador: regresión logística, balance de clases, semilla 42, etiquetas del investigador. Se entrena dentro de cada revisión a partir de tres ejemplos por clase como mínimo. Ese mínimo permite demostrar el circuito, no asegura calidad. Las recomendaciones no modifican las decisiones humanas.
+- Evaluación: partición estratificada 60/40 con semilla 42 a partir de cinco ejemplos por clase. TF-IDF se ajusta exclusivamente al subconjunto de entrenamiento. Se registran IDs de entrenamiento y prueba, métricas y matriz. No se ha establecido un gold standard científico; repetir ajustes sobre el mismo conjunto deja de ser evaluación independiente.
+
+Se eligió ONNX multilingüe para reducir la carga de un equipo Windows con 8 GB de RAM. El modelo e5 y el clasificador NLI mencionados al comienzo de la conversación eran candidatos, no compromisos ya implementados. Esta versión utiliza MiniLM cuantizado y regresión logística; se deben comparar empíricamente antes de elegir la solución final de la tesis.
+
+## Evidencia y trazabilidad
+
+La evidencia se extrae de títulos/resúmenes conservando el fragmento y los offsets. La igualdad exacta valida presencia textual; no valida la interpretación ni el cumplimiento del criterio. Se conserva motor, modelo, revisión del modelo, versión del protocolo y hash del texto. No se genera un resumen narrativo ni se afirma analizar el texto completo de cada publicación.
+
+El trabajo de análisis se ejecuta en un único worker para controlar memoria. Su estado persiste y se informa una interrupción tras reiniciar. No existe todavía un planificador de búsqueda periódica. Los reportes guardan una instantánea inmutable del estado y su SHA-256. El CSV se protege frente a fórmulas al abrirlo en una hoja de cálculo.
