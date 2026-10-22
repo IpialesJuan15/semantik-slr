@@ -1,5 +1,7 @@
 import httpx
+from datetime import date
 from fastapi.testclient import TestClient
+from urllib.parse import unquote
 
 from backend.app.main import create_app
 from backend.app.sources import SourceLimitError, search_doaj, search_openalex
@@ -7,21 +9,24 @@ from backend.app.sources import SourceLimitError, search_doaj, search_openalex
 
 def test_doaj_maps_oa_articles_and_year_filter(monkeypatch):
     def fake_get(self, url, params):
-        assert url == 'https://doaj.org/api/search/articles/artificial%20intelligence'
+        assert unquote(url) == 'https://doaj.org/api/search/articles/(artificial intelligence) AND bibjson.year:[2021 TO 2024]'
         assert params == {'page': 1, 'pageSize': 25}
         return httpx.Response(200, json={'total': 120, 'results': [
             {'bibjson': {'title': 'AI in Latin American universities', 'year': '2024', 'abstract': 'Empirical university study', 'identifier': [{'type': 'doi', 'id': 'https://doi.org/10.1234/ABC'}], 'author': [{'name': 'A. Author'}], 'link': [{'type': 'fulltext', 'url': 'https://example.org/paper'}]}},
             {'bibjson': {'title': 'Old paper', 'year': '2019'}},
             {'bibjson': {'title': 'Year-only paper', 'year': '2021'}},
             {'bibjson': {'title': 'Early 2021 paper', 'year': '2021', 'month': 'March'}},
+            {'bibjson': {'title': 'Late 2024 paper', 'year': '2024', 'month': 'December'}},
+            {'bibjson': {'title': 'Boundary 2024 paper', 'year': '2024', 'month': 'September'}},
+            {'bibjson': {'title': 'Future 2026 paper', 'year': '2026'}},
         ]})
     monkeypatch.setattr(httpx.Client, 'get', fake_get)
-    from datetime import date
-    records, total = search_doaj('artificial intelligence', 2021, 2026, 25, date(2021, 7, 1))
-    assert total == 120 and len(records) == 2
+    records, total = search_doaj('artificial intelligence', 2021, 2024, 25, date(2021, 7, 1), date(2024, 9, 15))
+    assert total == 120 and len(records) == 3
     assert records[0]['doi'] == '10.1234/abc'
     assert records[0]['source'] == 'DOAJ' and records[0]['is_oa'] is True
     assert records[1]['year'] == 2021 and records[1]['date_uncertain'] is True
+    assert records[2]['title'] == 'Boundary 2024 paper' and records[2]['date_uncertain'] is True
 
 
 def test_openalex_limit_is_explained_and_no_articles_are_saved(tmp_path, monkeypatch):

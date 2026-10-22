@@ -1,5 +1,12 @@
 # Validación
 
+## Validación adicional de la entrega 0.6
+
+- Las 16 pruebas verifican ahora que el intervalo completo llega a OpenAlex, que DOAJ restringe el año antes de paginar y comprueba meses de ambos extremos, y que la propia revisión base se omite aunque la fuente la devuelva. Se rechazan fechas finales futuras.
+- El investigador mostró que su base de Windows contiene la revisión publicada de 2022 marcada como candidata incluida. La nueva interfaz avisa para que revise esa decisión; no modifica ni elimina datos previos automáticamente.
+- DOAJ con la nueva consulta de intervalo no pudo probarse en vivo desde este entorno por el proxy 403 descrito abajo; debe comprobarse en Windows. La forma de la consulta se cotejó con el código de la API DOAJ, y la transformación de resultados se probó con respuestas controladas.
+- En Chromium, con una base sintética aislada que imitaba el registro previo, se comprobó el aviso del estudio base, el rango predeterminado 2021-07-01 a hoy, el filtro de años guardados y la explicación de fechas en Estudio base. Sin errores JavaScript ni desbordamiento horizontal a 390 px.
+
 ## Validación adicional de la entrega 0.5
 
 - La skill Interface Design se incorporó al proyecto desde su repositorio oficial, commit y licencia anotados en `docs/design.md`. La interfaz usa una guía contextual, análisis en la misma vista y expediente junto a la lista de lectura.

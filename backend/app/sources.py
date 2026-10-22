@@ -3,6 +3,7 @@ import calendar
 import os
 import re
 import unicodedata
+from datetime import date
 from urllib.parse import quote
 
 import httpx
@@ -66,9 +67,10 @@ def abstract_text(index):
     return ' '.join(word for _, word in sorted(words))[:50000]
 
 
-def search_openalex(query, year_from, year_to, limit, date_from=None):
+def search_openalex(query, year_from, year_to, limit, date_from=None, date_to=None):
     first_date = str(date_from) if date_from else f'{year_from}-01-01'
-    params = {'search': query, 'filter': f'is_oa:true,from_publication_date:{first_date},to_publication_date:{year_to}-12-31', 'per-page': limit}
+    last_date = str(date_to) if date_to else f'{year_to}-12-31'
+    params = {'search': query, 'filter': f'is_oa:true,from_publication_date:{first_date},to_publication_date:{last_date}', 'per-page': limit}
     key = os.getenv('OPENALEX_API_KEY')
     if key:
         params['api_key'] = key
@@ -106,9 +108,12 @@ def search_openalex(query, year_from, year_to, limit, date_from=None):
     return results, payload.get('meta', {}).get('count', len(results))
 
 
-def search_doaj(query, year_from, year_to, limit, date_from=None):
-    """Search DOAJ article metadata; date precision is often only a year."""
-    url='https://doaj.org/api/search/articles/'+quote(query.strip(), safe='')
+def search_doaj(query, year_from, year_to, limit, date_from=None, date_to=None):
+    """Restrict DOAJ by indexed year before paging; month precision varies."""
+    first=date_from or date(year_from,1,1)
+    last=date_to or date(year_to,12,31)
+    indexed_query=f'({query.strip()}) AND bibjson.year:[{first.year} TO {last.year}]'
+    url='https://doaj.org/api/search/articles/'+quote(indexed_query, safe='')
     try:
         with httpx.Client(timeout=35, headers={'User-Agent':'SemantikSLR/0.3 (academic review prototype)'}) as client:
             response=client.get(url,params={'page':1,'pageSize':limit})
@@ -132,11 +137,13 @@ def search_doaj(query, year_from, year_to, limit, date_from=None):
         if not isinstance(title,str) or not title.strip(): continue
         try: year=int(bib.get('year'))
         except (ValueError,TypeError): continue
-        if not year_from<=year<=year_to: continue
-        if date_from and year<date_from.year: continue
+        if not first.year<=year<=last.year: continue
         month=month_number(bib.get('month'))
-        if date_from and year==date_from.year and month is not None and month<date_from.month: continue
-        date_uncertain=bool(date_from and year==date_from.year and (month is None or (month==date_from.month and date_from.day>1)))
+        if year==first.year and month is not None and month<first.month: continue
+        if year==last.year and month is not None and month>last.month: continue
+        lower_uncertain=year==first.year and ((month is None and first.month>1) or (month==first.month and first.day>1))
+        upper_uncertain=year==last.year and ((month is None and last.month<12) or (month==last.month and last.day<31))
+        date_uncertain=bool(lower_uncertain or upper_uncertain)
         identifiers=bib.get('identifier') or []
         doi=next((item.get('id','') for item in identifiers if item.get('type','').lower()=='doi'), '')
         links=bib.get('link') or []

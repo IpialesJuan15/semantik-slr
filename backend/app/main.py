@@ -61,9 +61,10 @@ class SearchInput(BaseModel):
     source: Literal['openalex', 'doaj'] = 'openalex'
     query: str = Field(min_length=3, max_length=1000)
     year_from: int = Field(default=2020, ge=1800, le=2100)
-    year_to: int = Field(default=2026, ge=1800, le=2100)
+    year_to: int = Field(default_factory=lambda: date.today().year, ge=1800, le=2100)
     limit: int = Field(default=25, ge=1, le=100)
     date_from: date | None = None
+    date_to: date | None = None
 
 class DecisionInput(BaseModel):
     decision: Literal['pending', 'included', 'excluded']
@@ -128,13 +129,20 @@ def create_app(database_path=None):
         if row is None: raise HTTPException(404,'Esta revisión no tiene un estudio publicado registrado.')
         return {**json.loads(row['snapshot']), 'confirmed':bool(row['confirmed']), 'created_at':row['created_at']}
 
+    def is_base_publication(record, base):
+        doi=normalize_doi(record.get('doi',''))
+        return bool((doi and doi==normalize_doi(base['doi'])) or identity({'title':record['title']})==identity({'title':base['title']}))
+
     def add_articles(db, review_id, records, source):
         added = 0
+        base_row = db.execute('SELECT snapshot FROM published_bases WHERE review_id=?', (review_id,)).fetchone()
+        base = json.loads(base_row['snapshot']) if base_row else None
         for record in records:
             record = dict(record)
             doi = normalize_doi(record.get('doi', ''))
             key = identity(record)
             title_key = identity({'title': record['title']})
+            if base and is_base_publication(record,base): continue
             existing = db.execute('SELECT title,doi FROM articles WHERE review_id=?', (review_id,)).fetchall()
             if any((doi and normalize_doi(row['doi']) == doi) or identity({'title':row['title']}) == title_key for row in existing): continue
             db.execute('INSERT INTO articles (review_id,identity,title,abstract,doi,year,authors,url,source,is_oa) VALUES (?,?,?,?,?,?,?,?,?,?)', (review_id,key,record['title'],record.get('abstract',''),doi,record.get('year'),record.get('authors',''),record.get('url',''),source,int(record.get('is_oa',False))))
@@ -149,7 +157,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.5.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.6.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -297,15 +305,20 @@ def create_app(database_path=None):
             base_row=db.execute('SELECT snapshot,confirmed FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
         if payload.date_from and not payload.year_from<=payload.date_from.year<=payload.year_to:
             raise HTTPException(422,'Revisa el rango de fechas de la búsqueda.')
+        if payload.date_to and not payload.year_from<=payload.date_to.year<=payload.year_to:
+            raise HTTPException(422,'Revisa el rango de fechas de la búsqueda.')
+        if payload.date_to and payload.date_to>date.today():
+            raise HTTPException(422,'La fecha final no puede ser posterior a hoy.')
         first_date=payload.date_from or date(payload.year_from,1,1)
+        last_date=min(payload.date_to or date.today(),date(payload.year_to,12,31),date.today())
         if base_row:
             if not base_row['confirmed']: raise HTTPException(422,'Confirma primero el método del estudio base.')
             cutoff=date.fromisoformat(json.loads(base_row['snapshot'])['last_included_date'])+timedelta(days=1)
             first_date=max(first_date,cutoff)
-        if first_date>date(payload.year_to,12,31): raise HTTPException(422,'El rango termina antes de la última fecha de la revisión base.')
+        if first_date>last_date: raise HTTPException(422,'La fecha final debe ser posterior al inicio de la actualización.')
         source_name='OpenAlex' if payload.source=='openalex' else 'DOAJ'
         search_source=search_openalex if payload.source=='openalex' else search_doaj
-        try: records,total=search_source(payload.query,payload.year_from,payload.year_to,payload.limit,first_date)
+        try: records,total=search_source(payload.query,payload.year_from,last_date.year,payload.limit,first_date,last_date)
         except SourceLimitError as error:
             with connect(path) as db: event(db,review_id,'search_failed',{'request':payload.model_dump(mode='json'),'source':source_name,'reason':'rate_limit'})
             raise HTTPException(429,str(error),headers={'Retry-After':str(error.retry_after)} if error.retry_after is not None else None) from None
@@ -313,9 +326,12 @@ def create_app(database_path=None):
             with connect(path) as db: event(db,review_id,'search_failed',{'request':payload.model_dump(mode='json'),'source':source_name,'reason':'source_error'})
             raise HTTPException(502,str(error)) from None
         with connect(path) as db:
-            added=add_articles(db,review_id,records,source_name)
-            uncertain=sum(bool(row.get('date_uncertain')) for row in records) if payload.source=='doaj' else 0
-            result={'source':source_name,'query':payload.query,'date_from':first_date.isoformat(),'year_to':payload.year_to,'retrieved':len(records),'added':added,'duplicates':len(records)-added,'total_available':total,'limit':payload.limit,'exhaustive':False,'date_uncertain_count':uncertain}
+            base=json.loads(base_row['snapshot']) if base_row else None
+            candidates=[row for row in records if not(base and is_base_publication(row,base))]
+            base_skipped=len(records)-len(candidates)
+            added=add_articles(db,review_id,candidates,source_name)
+            uncertain=sum(bool(row.get('date_uncertain')) for row in candidates) if payload.source=='doaj' else 0
+            result={'source':source_name,'query':payload.query,'date_from':first_date.isoformat(),'date_to':last_date.isoformat(),'year_to':last_date.year,'retrieved':len(records),'added':added,'duplicates':len(candidates)-added,'base_skipped':base_skipped,'total_available':total,'limit':payload.limit,'exhaustive':False,'date_uncertain_count':uncertain}
             event(db,review_id,'search_completed',result)
         return result
 

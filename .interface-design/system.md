@@ -20,6 +20,7 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 
 - **Siguiente paso**: una indicación y una acción principal según confirmación del estudio base, existencia de candidatos, análisis y decisiones. La barra muestra revisados/total; nunca es una métrica decorativa.
 - **Búsqueda**: visible al iniciar; cuando ya hay candidatos se reduce a “Buscar más estudios”. La fuente preferida se recuerda por sesión. Se conserva el aviso de alcance metodológico.
+- **Fechas**: dos fechas completas nombradas “Publicados desde” y “Hasta (incluido)”. El final predeterminado es hoy; el inicio de una revisión publicada es el día siguiente al último incluido. La lista guardada tiene un filtro separado por años para evitar confundir búsqueda nueva con artículos persistidos.
 - **Análisis**: se ejecuta en la misma vista de artículos. Tras completarse, las opciones se recogen y se privilegia la lectura. La evaluación exploratoria queda en un desplegable secundario.
 - **Lectura y decisión**: lista y expediente visibles juntos en escritorio; en móvil la elección lleva al expediente. Guardar una decisión avanza al siguiente pendiente. Las recomendaciones automáticas permanecen separadas de la decisión humana.
 

@@ -3,6 +3,7 @@ import io
 import json
 import sqlite3
 import time
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -84,10 +85,10 @@ def test_import_atomic_validation_and_csv_safe(client):
 def test_openalex_mapping_and_search_history(client,monkeypatch):
     def fake_get(self,url,params):
         assert url=='https://api.openalex.org/works'
-        assert params['filter']=='is_oa:true,from_publication_date:2020-01-01,to_publication_date:2026-12-31'
+        assert params['filter']=='is_oa:true,from_publication_date:2020-01-01,to_publication_date:2024-09-15'
         return httpx.Response(200,json={'meta':{'count':50},'results':[{'display_name':'Paper','doi':'https://doi.org/10.123/a','abstract_inverted_index':{'University':[0],'students':[1]},'open_access':{'is_oa':True},'publication_year':2024,'authorships':[]}]})
     monkeypatch.setattr(httpx.Client,'get',fake_get)
-    records,total=search_openalex('education',2020,2026,25)
+    records,total=search_openalex('education',2020,2024,25,date_to=date(2024,9,15))
     assert records[0]['abstract']=='University students' and total==50
     assert records[0]['doi']=='10.123/a'
 

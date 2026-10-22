@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.5
+# Semantik SLR · versión 0.6
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/flujo-investigador
+git switch --track origin/feature/fechas-busqueda
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/flujo-investigador` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/fechas-busqueda` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -25,16 +25,20 @@ Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paque
 2. Abre la revisión creada, adjunta su PDF original con texto seleccionable (hasta 8 MB/80 páginas) y coteja las preguntas, criterios, fuentes y fecha con el documento. La aplicación rechaza un PDF cuyo texto no contenga el DOI o título esperado.
 3. Corrige lo necesario y pulsa **Confirmar método de la revisión**. No hay LLM ni extracción automática de criterios todavía: los valores son una transcripción inicial, atribuida al artículo, que requiere tu validación.
 4. Explora los **31 estudios originales** de la tabla 1 y los recuentos de la tabla 2. Estos datos se guardan al crear la revisión y aparecen separados de los artículos nuevos. La tabla es una transcripción resumida; no contiene todavía el título completo, DOI y todos los campos de cada estudio original.
-5. Pulsa **Buscar estudios posteriores**. Elige **OpenAlex** o **DOAJ**. La búsqueda empieza como mínimo el 1 de julio de 2021; elige el límite de registros, analiza candidatos y guarda tus decisiones. DOAJ a menudo informa solo el año: comprueba la fecha exacta de los registros de 2021. Ninguna de estas búsquedas reproduce las cuatro fuentes originales ni garantiza cobertura exhaustiva.
+5. Pulsa **Buscar estudios posteriores**. Elige **OpenAlex** o **DOAJ** y un intervalo completo de fechas. La búsqueda empieza como mínimo el 1 de julio de 2021 y termina en la fecha que elijas, sin pasar de hoy. Un artículo de 2026 es válido si queda dentro del intervalo y cumple los demás criterios. DOAJ suele informar solo el año; confirma la fecha exacta de los artículos de los años límite. Ninguna de estas búsquedas reproduce las cuatro fuentes originales ni garantiza cobertura exhaustiva.
 6. Genera un reporte. El JSON guarda el estudio base y los nuevos candidatos por separado; el HTML muestra DOI, recuentos originales y decisiones nuevas.
 
 Los resultados tabulares **todavía no se actualizan automáticamente** al incluir un artículo. La siguiente fase incorporará extracción estructurada, confirmación de campos del nuevo estudio y cálculo de cambios de cada tabla.
+
+El estudio base se publicó en **2022**, pero examinó estudios publicados **hasta el 30 de junio de 2021**. Sus 31 estudios originales aparecen como antecedentes; no son nuevos candidatos. La propia revisión de 2022 tampoco es un estudio primario nuevo y ahora se omite en búsquedas/importaciones futuras. Si ya la tenías guardada como candidato, la aplicación la señala para que revises y corrijas su decisión; no borra automáticamente tus datos ni tu historial.
+
+El filtro de fechas de **Buscar más estudios** se aplica a la siguiente consulta, no elimina artículos recuperados antes. La lista de lectura permite ver **todas las fechas guardadas** o limitarse a los **años del intervalo seleccionado**. El filtro de la lista usa años porque DOAJ no siempre ofrece día y mes.
 
 ## Después de recuperar artículos en DOAJ
 
 1. En **Buscar y decidir**, la guía **Siguiente paso** indica qué falta. Si ya hay candidatos, elige **Analizar artículos** en la misma pantalla. Puedes empezar con **TF-IDF**; si activaste el modelo local, usa **Similitud semántica**.
 2. Pulsa **Revisar el siguiente**. La lista de lectura y el detalle aparecen juntos en escritorio. En móvil, al elegir un candidato se abre su detalle más abajo.
-3. Comprueba título, resumen, DOI/enlace y fragmentos contra los criterios de la revisión. El puntaje solo ordena la lectura: no decide por ti. Si el artículo es de 2021, confirma su fecha exacta en la fuente.
+3. Comprueba título, resumen, DOI/enlace y fragmentos contra los criterios de la revisión. El puntaje solo ordena la lectura: no decide por ti. Si el artículo es del primer o último año del intervalo, confirma su fecha exacta en la fuente.
 4. Selecciona **Incluido**, **Excluido** o **Pendiente**, escribe el motivo y pulsa **Guardar decisión**. La aplicación abre el siguiente candidato pendiente cuando corresponde.
 5. Cuando termines, abre **Informes** y genera una versión. Para añadir más candidatos, usa **Buscar más estudios** en la misma pantalla. No necesitas crear otra revisión ni volver a cargar el PDF.
 
@@ -57,7 +61,7 @@ Estado de validación de esta entrega: el conector OpenAlex recuperó artículos
 1. Crear la revisión desde el estudio publicado preparado y confirmar su método, o abrir las revisiones manuales anteriores.
 2. Editar el protocolo. Cada edición incrementa su versión, invalida el análisis anterior y señala decisiones que necesitan revisión.
 3. Importar un PDF base con texto seleccionable (hasta 8 MB y 80 páginas). La extracción recupera texto; la confirmación de pregunta y criterios sigue siendo manual. Sin OCR.
-4. Buscar en OpenAlex o DOAJ con consulta, años y límite de 25, 50 o 100 registros. Los resultados son de acceso abierto según la fuente. La búsqueda limitada no acredita exhaustividad.
+4. Buscar en OpenAlex o DOAJ con consulta, fecha inicial y final, y límite de 25, 50 o 100 registros. Los resultados son de acceso abierto según la fuente. La búsqueda limitada no acredita exhaustividad.
 5. Añadir artículos manualmente o importar CSV/JSON. Se omiten duplicados por DOI normalizado o título normalizado.
 6. Ejecutar comparación léxica o semántica. Revisar similitud y fragmentos exactos asociados a los criterios. La comparación trabaja con título y resumen, no con el texto completo de cada artículo.
 7. Registrar inclusión/exclusión/pendiente con un motivo. No se producen inclusiones automáticas.
@@ -70,7 +74,7 @@ Formato CSV/JSON: `title` obligatorio; opcionales `abstract`, `doi`, `year`, `au
 ## Servicios externos
 
 - OpenAlex: sin clave comparte una cuota diaria con todos los usuarios de tu IP, por lo que puedes recibir HTTP 429 aunque hayas hecho pocas búsquedas. Según su respuesta actual, una clave gratuita da una cuota propia. Puedes obtenerla en https://openalex.org/settings/api. En CMD, antes de `iniciar.bat`, usa `set "OPENALEX_API_KEY=TU_CLAVE"` en **la misma terminal**. No la escribas en archivos del repositorio ni la pegues en el chat. Reinicia el servidor después de configurarla. La aplicación solo muestra si existe una clave, nunca su valor.
-- DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. Si DOAJ informa solo el año de publicación, especialmente para 2021, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
+- DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. La consulta restringe los años antes de paginar y comprueba los meses conocidos en ambos extremos. Si DOAJ informa solo el año, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
 - Hugging Face: descarga inicial del modelo fijado; después la inferencia es local.
 - LLM generativo y Zenodo: todavía no integrados. No se requieren sus cuentas para esta entrega.
 

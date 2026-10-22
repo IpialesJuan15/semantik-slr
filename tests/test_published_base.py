@@ -48,14 +48,17 @@ def test_published_base_confirmation_search_cutoff_and_snapshot(tmp_path, monkey
 
         from backend.app import main
         seen = {}
-        def fake_search(query, year_from, year_to, limit, first_date):
+        def fake_search(query, year_from, year_to, limit, first_date, last_date):
             seen['first_date'] = first_date
-            return [{'title': 'New empirical study', 'abstract': 'Artificial intelligence at a university in Ecuador.', 'year': 2024}], 1
+            seen['last_date'] = last_date
+            return [{'title': base['title'], 'doi': base['doi'], 'year': 2022}, {'title': 'New empirical study', 'abstract': 'Artificial intelligence at a university in Ecuador.', 'year': 2024}], 2
         monkeypatch.setattr(main, 'search_openalex', fake_search)
-        result = client.post(f'/api/reviews/{rid}/search', json={'query': 'artificial intelligence', 'year_from': 2020, 'year_to': 2026, 'limit': 25})
-        assert result.status_code == 200 and seen['first_date'] == date(2021, 7, 1)
-        assert result.json()['added'] == 1 and result.json()['date_from'] == '2021-07-01'
+        result = client.post(f'/api/reviews/{rid}/search', json={'query': 'artificial intelligence', 'year_from': 2020, 'year_to': 2024, 'date_to': '2024-09-15', 'limit': 25})
+        assert result.status_code == 200 and seen['first_date'] == date(2021, 7, 1) and seen['last_date'] == date(2024, 9, 15)
+        assert result.json()['added'] == 1 and result.json()['base_skipped'] == 1 and result.json()['date_from'] == '2021-07-01' and result.json()['date_to'] == '2024-09-15'
         assert len(client.get(f'/api/reviews/{rid}/articles').json()) == 1
+        assert client.post(f'/api/reviews/{rid}/articles', json={'title':base['title'],'doi':base['doi']}).json()['added'] == 0
+        assert client.post(f'/api/reviews/{rid}/search',json={'query':'artificial intelligence','year_from':2021,'year_to':2100,'date_to':'2100-01-01'}).status_code==422
         report = client.post(f'/api/reviews/{rid}/reports').json()
         snapshot = client.get(f'/api/reports/{report["id"]}.json').json()
         assert snapshot['published_base']['original_count'] == 31

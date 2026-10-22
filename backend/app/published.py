@@ -98,5 +98,5 @@ def template(doi):
         'application_counts': [{'name': name, 'count': len(ids), 'source_table': 'Tabla 2, p. 11'}
                                for name, ids in APPLICATIONS.items()],
         'method_source': 'Texto del artículo aportado por el investigador; método, pp. 5–7; tablas 1 y 2, pp. 8–11.',
-        'coverage_note': 'OpenAlex no replica las cuatro bases originales ni sus consultas multilingües. La estrategia debe revisarse antes de declarar una actualización sistemática.',
+        'coverage_note': 'DOAJ y OpenAlex no replican las cuatro bases originales ni sus consultas multilingües. La estrategia debe revisarse antes de declarar una actualización sistemática.',
     }
