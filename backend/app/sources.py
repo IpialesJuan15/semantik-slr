@@ -30,8 +30,9 @@ def abstract_text(index):
     return ' '.join(word for _, word in sorted(words))[:50000]
 
 
-def search_openalex(query, year_from, year_to, limit):
-    params = {'search': query, 'filter': f'is_oa:true,from_publication_date:{year_from}-01-01,to_publication_date:{year_to}-12-31', 'per-page': limit}
+def search_openalex(query, year_from, year_to, limit, date_from=None):
+    first_date = str(date_from) if date_from else f'{year_from}-01-01'
+    params = {'search': query, 'filter': f'is_oa:true,from_publication_date:{first_date},to_publication_date:{year_to}-12-31', 'per-page': limit}
     key = os.getenv('OPENALEX_API_KEY')
     if key:
         params['api_key'] = key

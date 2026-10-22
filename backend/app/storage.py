@@ -46,6 +46,11 @@ def initialize(path):
           version INTEGER NOT NULL, snapshot TEXT NOT NULL, sha256 TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
           UNIQUE(review_id, version));
+        CREATE TABLE IF NOT EXISTS published_bases (
+          review_id INTEGER PRIMARY KEY REFERENCES reviews(id),
+          doi TEXT NOT NULL, snapshot TEXT NOT NULL,
+          confirmed INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
         ''')
         existing = {row['name'] for row in db.execute('PRAGMA table_info(reviews)')}
         for name, definition in {

@@ -1,4 +1,12 @@
-# Validación de la entrega 0.2
+# Validación
+
+## Validación adicional de la entrega 0.3
+
+- 13 pruebas automatizadas aprobadas en Python 3.12/Linux. La prueba nueva crea una revisión desde el DOI publicado, comprueba los 31 registros históricos y los recuentos originales, exige PDF y confirmación humana antes de buscar, verifica el corte del 1 de julio de 2021, comprueba que un candidato nuevo no se mezcla con los originales, verifica el reporte y la persistencia tras reiniciar.
+- Compilación React/Vite completada. Prueba en Chromium: crear el caso preparado, mostrar los 31 registros, adjuntar un PDF sintético identificado como prueba, confirmar método, añadir un candidato sintético, ejecutar TF-IDF y volver automáticamente a revisar el artículo. Sin errores JavaScript ni desbordamiento horizontal a 390 px.
+- Consulta real a OpenAlex desde el flujo de la revisión base: `artificial intelligence higher education Latin America`, desde `2021-07-01` hasta 2026, límite 3; devolvió tres registros, con el resultado marcado como no exhaustivo. Esta consulta se ejecutó en una base de prueba aislada.
+- El caso preparado se derivó de la transcripción del artículo aportada por el investigador: Salas-Pilco y Yang (2022), DOI `10.1186/s41239-022-00326-w`, pp. 5–11. Se transcribieron las preguntas, método, 31 citas abreviadas/países y las cinco categorías de la tabla 2. Todavía se requiere cotejo humano con el PDF original. No se han estructurado todos los campos de la tabla 1.
+- La inferencia del modelo semántico con pesos reales sigue sin verificarse por el bloqueo de descarga descrito abajo. Tampoco se ejecutaron los BAT en Windows.
 
 ## Verificado
 
