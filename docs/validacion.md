@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.5
+
+- La skill Interface Design se incorporó al proyecto desde su repositorio oficial, commit y licencia anotados en `docs/design.md`. La interfaz usa una guía contextual, análisis en la misma vista y expediente junto a la lista de lectura.
+- En Chromium se probó el flujo con datos sintéticos aislados: analizar con TF-IDF, abrir el primer pendiente, guardar una decisión y avanzar al siguiente. No hubo errores JavaScript ni desbordamiento horizontal a 390 px. Estos datos no se incorporaron al producto.
+- El investigador informó que la consulta DOAJ en su equipo devuelve artículos candidatos. La prueba automatizada del conector y la limitación de acceso de este entorno se documentan abajo.
+
 ## Validación adicional de la entrega 0.4
 
 - 16 pruebas automatizadas aprobadas. Las tres nuevas verifican la transformación de registros DOAJ, el filtro anual y DOI, la selección de la fuente, la persistencia de procedencia y el manejo de HTTP 429 sin guardar resultados incompletos.

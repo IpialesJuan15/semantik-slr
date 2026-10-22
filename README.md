@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.4
+# Semantik SLR · versión 0.5
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/fuentes-doaj-openalex
+git switch --track origin/feature/flujo-investigador
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/fuentes-doaj-openalex` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/flujo-investigador` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -29,6 +29,16 @@ Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paque
 6. Genera un reporte. El JSON guarda el estudio base y los nuevos candidatos por separado; el HTML muestra DOI, recuentos originales y decisiones nuevas.
 
 Los resultados tabulares **todavía no se actualizan automáticamente** al incluir un artículo. La siguiente fase incorporará extracción estructurada, confirmación de campos del nuevo estudio y cálculo de cambios de cada tabla.
+
+## Después de recuperar artículos en DOAJ
+
+1. En **Buscar y decidir**, la guía **Siguiente paso** indica qué falta. Si ya hay candidatos, elige **Analizar artículos** en la misma pantalla. Puedes empezar con **TF-IDF**; si activaste el modelo local, usa **Similitud semántica**.
+2. Pulsa **Revisar el siguiente**. La lista de lectura y el detalle aparecen juntos en escritorio. En móvil, al elegir un candidato se abre su detalle más abajo.
+3. Comprueba título, resumen, DOI/enlace y fragmentos contra los criterios de la revisión. El puntaje solo ordena la lectura: no decide por ti. Si el artículo es de 2021, confirma su fecha exacta en la fuente.
+4. Selecciona **Incluido**, **Excluido** o **Pendiente**, escribe el motivo y pulsa **Guardar decisión**. La aplicación abre el siguiente candidato pendiente cuando corresponde.
+5. Cuando termines, abre **Informes** y genera una versión. Para añadir más candidatos, usa **Buscar más estudios** en la misma pantalla. No necesitas crear otra revisión ni volver a cargar el PDF.
+
+La skill [Interface Design](.agents/skills/interface-design/SKILL.md) se instaló en el proyecto desde [Dammyjay93/interface-design](https://github.com/Dammyjay93/interface-design), commit `2f9be3206855bcb2d1d0af262c8bae25cba6658d`, bajo licencia MIT. Está incluida para Codex en `.agents/skills` y para Claude Code en `.claude/skills`, sin requerir una instalación global. Los patrones propios de esta aplicación están en `.interface-design/system.md`. El comando `/plugin marketplace add` pertenece a Claude Code y se puede usar allí si también quieres instalar su plugin globalmente.
 
 ## Activar el modelo semántico
 
@@ -97,7 +107,7 @@ Para IA: instala `requirements-ai.lock` y ejecuta `python -m backend.download_mo
 
 - `backend/app/main.py`: API y flujos de trabajo.
 - `backend/app/storage.py`: tablas, migraciones y eventos.
-- `backend/app/sources.py`: OpenAlex y normalización de duplicados.
+- `backend/app/sources.py`: OpenAlex, DOAJ y normalización de duplicados.
 - `backend/app/analysis.py`: embeddings, similitud, evidencia y clasificador.
 - `backend/app/evaluation.py`: evaluación exploratoria con partición reproducible.
 - `frontend/src/`: pantallas React y estilos.
