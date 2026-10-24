@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.9
+
+- El investigador comprobó en Windows la descarga automática del artículo de Bashayer (DOI `10.3389/fpsyg.2023.1129070`): 16 páginas y 92 707 caracteres extraídos. El PDF está disponible en la fuente de Frontiers y la app guardó su procedencia. El texto extraído presentó glifos numéricos como `/one.tnum`; la nueva versión repara estos patrones en la vista y antes de seleccionar pasajes. La coincidencia de título/DOI y las interpretaciones siguen requiriendo cotejo humano.
+- 21 pruebas Python aprobadas y compilación React/Vite correcta. Las pruebas nuevas verifican normalización de glifos, validación de citas por página, rechazo de cita inventada, independencia de la decisión humana e invalidación de propuestas tras cambiar el protocolo. Son respuestas LLM sintéticas, no miden calidad del modelo.
+- Chromium en base aislada con una propuesta sintética identificada como tal: panel LLM a 1365 y 390 px, sin errores JavaScript ni desbordamiento. Si Ollama no está instalado, el botón muestra una instrucción concreta y conserva la propuesta previa. Inferencia real de `qwen2.5:3b` en Windows aún pendiente.
+
 ## Validación adicional de la entrega 0.8
 
 - 18 pruebas Python aprobadas y compilación React/Vite correcta. Las pruebas nuevas verifican que el PDF de un candidato se guarda con procedencia, hash y texto por página; que un enlace abierto fallido permite probar otra ubicación; que un archivo inválido no sustituye el anterior; que la decisión humana no cambia; y que se rechazan direcciones locales/privadas.

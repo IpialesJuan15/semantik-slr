@@ -36,4 +36,8 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 
 - **Documento del candidato**: sección blanca con borde suave entre resumen y evidencia. Muestra estado de lectura, páginas, procedencia y advertencia de cotejo; los fragmentos por página permanecen plegados. Buscar PDF abierto y adjuntar PDF comparten la misma sección. «PDF leído» no implica que el análisis ni el LLM hayan examinado el texto.
 
+## Ajuste de la versión 0.9
+
+- **Asistente local**: dentro del documento, bajo la vista previa y antes de las pistas semánticas. Presenta una propuesta por criterio con cita/página o incertidumbre explícita. El bloque se nombra «Asistente de lectura del PDF» para distinguirlo de la decisión humana y de los puntajes de título/resumen.
+
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.

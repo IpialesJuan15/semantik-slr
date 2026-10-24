@@ -4,7 +4,9 @@ import hashlib
 import io
 import ipaddress
 import os
+import re
 import socket
+import unicodedata
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -16,6 +18,15 @@ MAX_PDF_BYTES = 8 * 1024 * 1024
 MAX_PAGES = 80
 MAX_TEXT_CHARS = 160000
 USER_AGENT = 'SemantikSLR/0.8 (academic review prototype)'
+DIGIT_NAMES = {'zero':'0','one':'1','two':'2','three':'3','four':'4','five':'5',
+               'six':'6','seven':'7','eight':'8','nine':'9'}
+DIGIT_GLYPH = re.compile(r'/(' + '|'.join(DIGIT_NAMES) + r')\.tnum\b')
+
+
+def clean_pdf_text(value):
+    """Repair common glyph artifacts without paraphrasing document content."""
+    value = unicodedata.normalize('NFKC', value)
+    return DIGIT_GLYPH.sub(lambda match: DIGIT_NAMES[match.group(1)], value)
 
 
 def public_https(url):
@@ -118,7 +129,7 @@ def extract_pdf(content):
         total = 0
         truncated = False
         for index, page in enumerate(reader.pages, 1):
-            extracted = (page.extract_text() or '').strip()
+            extracted = clean_pdf_text(page.extract_text() or '').strip()
             space = max(0, MAX_TEXT_CHARS - total)
             if len(extracted) > space:
                 truncated = True

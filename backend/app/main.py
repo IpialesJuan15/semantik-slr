@@ -17,8 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from pypdf import PdfReader
 from .analysis import analyze, MODEL
-from .documents import MAX_PDF_BYTES, download_pdf, extract_pdf, openalex_pdf_urls
+from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
+from .llm_review import generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
 from .storage import article_json, connect, event, initialize
@@ -118,7 +119,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.8.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.9.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -193,7 +194,7 @@ def create_app(database_path=None):
         return {'status': 'read', 'source_type': row['source_type'], 'source_url': row['source_url'],
                 'filename': row['filename'], 'sha256': row['sha256'], 'page_count': row['page_count'],
                 'characters': row['characters'], 'truncated': bool(row['truncated']),
-                'page_previews': [{'page': page['page'], 'text': page['text'][:1200]}
+                'page_previews': [{'page': page['page'], 'text': clean_pdf_text(page['text'])[:1200]}
                                   for page in json.loads(row['pages_json']) if page['text'].strip()][:12]}
 
     @app.get('/health')
@@ -204,7 +205,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.8.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.9.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -360,6 +361,44 @@ def create_app(database_path=None):
         await file.close()
         if len(content) > MAX_PDF_BYTES: raise HTTPException(413, 'El PDF debe ocupar como máximo 8 MB.')
         return save_document(article_id, content, 'Investigador', filename=Path(file.filename or 'articulo.pdf').name)
+
+    @app.get('/api/articles/{article_id}/document/llm-review')
+    def latest_document_review(article_id: int):
+        with connect(path) as db:
+            article = get_candidate(db, article_id)
+            review = get_review(db, article['review_id'])
+            document = db.execute('SELECT sha256 FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
+            if document is None: return {'status': 'missing'}
+            row = db.execute('''SELECT * FROM document_reviews WHERE article_id=?
+                AND protocol_version=? AND document_sha256=? ORDER BY id DESC LIMIT 1''',
+                (article_id, review['protocol_version'], document['sha256'])).fetchone()
+        return {'status': 'ready', 'created_at': row['created_at'], **json.loads(row['result_json'])} if row else {'status': 'missing'}
+
+    @app.post('/api/articles/{article_id}/document/llm-review')
+    def create_document_review(article_id: int):
+        with connect(path) as db:
+            article = dict(get_candidate(db, article_id))
+            review = get_review(db, article['review_id'])
+            document = db.execute('SELECT sha256,pages_json,truncated FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
+        if document is None: raise HTTPException(422, 'Busca o adjunta primero el PDF de este candidato.')
+        if document['truncated']:
+            raise HTTPException(422, 'La extracción del PDF quedó incompleta. Revisa el archivo antes de usar el LLM.')
+        try:
+            result = generate_local_review(review, article, json.loads(document['pages_json']), document['sha256'])
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        with connect(path) as db:
+            get_candidate(db, article_id)
+            current = get_review(db, article['review_id'])
+            current_document = db.execute('SELECT sha256 FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
+            if current['protocol_version'] != review['protocol_version'] or not current_document or current_document['sha256'] != document['sha256']:
+                raise HTTPException(409, 'El protocolo o PDF cambió durante el análisis. Vuelve a ejecutarlo.')
+            db.execute('INSERT INTO document_reviews (article_id,protocol_version,document_sha256,model,result_json) VALUES (?,?,?,?,?)',
+                       (article_id, review['protocol_version'], document['sha256'], result['model'], json.dumps(result, ensure_ascii=False)))
+            event(db, article['review_id'], 'llm_pdf_review_created',
+                  {'article_id': article_id, 'model': result['model'], 'protocol_version': review['protocol_version'],
+                   'document_sha256': document['sha256'], 'verified_quotes': sum(item['quote_verified'] for item in result['criteria'])})
+        return {'status': 'ready', **result}
 
     @app.post('/api/reviews/{review_id}/articles',status_code=201)
     def add_article(review_id:int,payload:ArticleInput):
