@@ -268,3 +268,16 @@ def test_groq_limit_has_actionable_message_and_keeps_provider_text_private(monke
                                          [{'page': 1, 'text': 'Empirical study with university students in Latin America.'}],
                                          'hash', 0)
     assert 'test-groq-secret' not in str(caught.value)
+
+
+def test_uncertain_answer_is_distinct_from_unverifiable_quote():
+    from backend.app.llm_review import checked_result
+    criteria=[{'kind':'inclusion','text':'Lugar y técnica de IA'}]
+    pages=[{'page':2,'text':'Participants at a Costa Rican public university used AI writing software.'}]
+    review={'protocol_version':3}
+    uncertain=checked_result('{"assessment":"incierto","page":null,"quote":"","explanation":"Falta la técnica"}',criteria,pages,pages,review,'hash','groq','model')
+    assert uncertain['criteria'][0]['evidence_status']=='model_uncertain'
+    invented=checked_result('{"assessment":"apoya","page":2,"quote":"Machine learning was used in this study","explanation":"Inventado"}',criteria,pages,pages,review,'hash','groq','model')
+    assert invented['criteria'][0]['evidence_status']=='quote_unverified'
+    assert invented['criteria'][0]['assessment']=='incierto'
+    assert 'Inventado' not in invented['criteria'][0]['explanation']

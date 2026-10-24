@@ -146,12 +146,15 @@ def checked_result(raw_text, criteria, passages, pages, review, pdf_hash, provid
                  and present_in_page(quote, page_map[page])
                  and any(p['page'] == page and present_in_page(quote, p['text']) for p in passages)
                  and assessment in ('apoya', 'contradice', 'incierto'))
+        evidence_status = ('verified' if valid else
+                           'model_uncertain' if assessment == 'incierto' and not quote else
+                           'quote_unverified' if quote else 'no_citation')
         results.append({'criterion': criterion['text'], 'kind': criterion['kind'],
                         'assessment': assessment if valid else 'incierto',
                         'page': page if valid else None, 'quote': quote if valid else '',
                         'explanation': str(proposal.get('explanation', ''))[:400] if valid else
                         'No se obtuvo una cita textual comprobable para este criterio.',
-                        'quote_verified': bool(valid)})
+                        'quote_verified': bool(valid), 'evidence_status': evidence_status})
     return {'provider': provider, 'model': model, 'document_sha256': pdf_hash,
             'protocol_version': review['protocol_version'], 'passages_examined': len(passages),
             'criteria': results, 'scope': 'experimental_pdf_passages', 'usage': usage or {},
