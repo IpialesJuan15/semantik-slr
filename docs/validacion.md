@@ -1,10 +1,16 @@
 # Validación
 
+## Validación adicional de la entrega 0.6.1
+
+- El investigador probó en Windows la búsqueda DOAJ acotada al 2021-07-01–2024-12-31: recuperó 25 candidatos de 994 resultados declarados por la fuente. La consulta funciona allí, pero solo recorrió la primera página y no representa una búsqueda exhaustiva.
+- El investigador ejecutó el modelo semántico local sobre 41 registros reales: el trabajo terminó y la interfaz mostró el modelo y fragmentos. Los puntajes incluyeron falsos indicios de cumplimiento de criterios, por lo que no se interpretan como decisiones ni validación científica.
+- Una base de prueba aislada con un registro antiguo de la propia revisión base verifica que la API lo identifica, lo omite del recuento de candidatos, análisis, CSV y tabla principal del nuevo reporte, y lo conserva aparte en el JSON. Los reportes con pendientes se etiquetan como borrador. Los reportes anteriores permanecen inmutables.
+
 ## Validación adicional de la entrega 0.6
 
 - Las 16 pruebas verifican ahora que el intervalo completo llega a OpenAlex, que DOAJ restringe el año antes de paginar y comprueba meses de ambos extremos, y que la propia revisión base se omite aunque la fuente la devuelva. Se rechazan fechas finales futuras.
 - El investigador mostró que su base de Windows contiene la revisión publicada de 2022 marcada como candidata incluida. La nueva interfaz avisa para que revise esa decisión; no modifica ni elimina datos previos automáticamente.
-- DOAJ con la nueva consulta de intervalo no pudo probarse en vivo desde este entorno por el proxy 403 descrito abajo; debe comprobarse en Windows. La forma de la consulta se cotejó con el código de la API DOAJ, y la transformación de resultados se probó con respuestas controladas.
+- DOAJ con la nueva consulta de intervalo no pudo probarse en vivo desde este entorno por el proxy 403 descrito abajo; posteriormente el investigador la probó con éxito en Windows. La forma de la consulta se cotejó con el código de la API DOAJ, y la transformación de resultados se probó con respuestas controladas.
 - En Chromium, con una base sintética aislada que imitaba el registro previo, se comprobó el aviso del estudio base, el rango predeterminado 2021-07-01 a hoy, el filtro de años guardados y la explicación de fechas en Estudio base. Sin errores JavaScript ni desbordamiento horizontal a 390 px.
 
 ## Validación adicional de la entrega 0.5
@@ -45,8 +51,7 @@ En Windows, `activar-ia.bat` instala las dependencias y descarga los artefactos 
 
 ## Todavía no verificado
 
-- Ejecución de los BAT y rendimiento/memoria en el Windows del usuario.
-- Inferencia semántica real con el modelo descargado.
+- Medición controlada de rendimiento/memoria y repetición independiente de la inferencia semántica en Windows; el usuario informó que `iniciar.bat` y el análisis semántico funcionaron.
 - Precisión clínica/científica, recall de recuperación, F1 sobre un gold standard independiente o usabilidad con investigadores.
 - Multiusuario, despliegue público, planificador periódico, resumen generativo, Zenodo y DOI.
 

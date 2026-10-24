@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.6
+# Semantik SLR · versión 0.6.1
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/fechas-busqueda
+git switch --track origin/feature/reporte-candidatos
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/fechas-busqueda` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/reporte-candidatos` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -29,6 +29,8 @@ Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paque
 6. Genera un reporte. El JSON guarda el estudio base y los nuevos candidatos por separado; el HTML muestra DOI, recuentos originales y decisiones nuevas.
 
 Los resultados tabulares **todavía no se actualizan automáticamente** al incluir un artículo. La siguiente fase incorporará extracción estructurada, confirmación de campos del nuevo estudio y cálculo de cambios de cada tabla.
+
+Si una búsqueda antigua guardó la propia revisión base como candidato, el registro y su decisión se conservan como antecedente, pero ya no cuentan como estudio nuevo, no participan en nuevos análisis ni en la tabla CSV de candidatos. Un reporte nuevo conserva ese registro aparte en `legacy_base_records` del JSON. Mientras queden pendientes, el reporte se marca como **Borrador**. Los reportes anteriores siguen siendo instantáneas inmutables y conservan sus cifras históricas.
 
 El estudio base se publicó en **2022**, pero examinó estudios publicados **hasta el 30 de junio de 2021**. Sus 31 estudios originales aparecen como antecedentes; no son nuevos candidatos. La propia revisión de 2022 tampoco es un estudio primario nuevo y ahora se omite en búsquedas/importaciones futuras. Si ya la tenías guardada como candidato, la aplicación la señala para que revises y corrijas su decisión; no borra automáticamente tus datos ni tu historial.
 

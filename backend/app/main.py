@@ -117,7 +117,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.3.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.6.1', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -132,6 +132,10 @@ def create_app(database_path=None):
     def is_base_publication(record, base):
         doi=normalize_doi(record.get('doi',''))
         return bool((doi and doi==normalize_doi(base['doi'])) or identity({'title':record['title']})==identity({'title':base['title']}))
+
+    def base_snapshot(db, review_id):
+        row=db.execute('SELECT snapshot FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
+        return json.loads(row['snapshot']) if row else None
 
     def add_articles(db, review_id, records, source):
         added = 0
@@ -157,7 +161,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.6.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.6.1'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -208,7 +212,16 @@ def create_app(database_path=None):
     def reviews():
         with connect(path) as db:
             rows = db.execute("SELECT r.*, (SELECT count(*) FROM articles a WHERE a.review_id=r.id) article_count, (SELECT count(*) FROM articles a WHERE a.review_id=r.id AND a.decision='included') included_count FROM reviews r ORDER BY r.id DESC").fetchall()
-        return [{k:row[k] for k in row.keys() if k != 'base_text'} for row in rows]
+            result=[]
+            for row in rows:
+                item={k:row[k] for k in row.keys() if k != 'base_text'}
+                base=base_snapshot(db,row['id'])
+                if base:
+                    legacy=[article for article in db.execute('SELECT title,doi,decision FROM articles WHERE review_id=?',(row['id'],)) if is_base_publication(dict(article),base)]
+                    item['article_count']-=len(legacy)
+                    item['included_count']-=sum(article['decision']=='included' for article in legacy)
+                result.append(item)
+        return result
 
     @app.post('/api/reviews', status_code=201)
     def create_review(payload: ReviewInput):
@@ -265,7 +278,8 @@ def create_app(database_path=None):
     def articles(review_id:int):
         with connect(path) as db:
             get_review(db,review_id)
-            return [article_json(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY score DESC,id DESC',(review_id,))]
+            base=base_snapshot(db,review_id)
+            return [{**article_json(row),'is_base_publication':bool(base and is_base_publication(dict(row),base))} for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY score DESC,id DESC',(review_id,))]
 
     @app.post('/api/reviews/{review_id}/articles',status_code=201)
     def add_article(review_id:int,payload:ArticleInput):
@@ -349,7 +363,9 @@ def create_app(database_path=None):
         try:
             with connect(path) as db:
                 review=get_review(db,review_id)
+                base=base_snapshot(db,review_id)
                 articles=[dict(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY id',(review_id,))]
+                if base: articles=[article for article in articles if not is_base_publication(article,base)]
                 for article in articles:
                     if article['decision_version'] != review['protocol_version']:
                         article['decision']='pending'
@@ -368,7 +384,9 @@ def create_app(database_path=None):
     def start_analysis(review_id:int,payload:AnalysisInput):
         with job_lock, connect(path) as db:
             get_review(db,review_id)
-            count=db.execute('SELECT count(*) FROM articles WHERE review_id=?',(review_id,)).fetchone()[0]
+            base=base_snapshot(db,review_id)
+            records=[dict(row) for row in db.execute('SELECT title,doi FROM articles WHERE review_id=?',(review_id,))]
+            count=sum(not(base and is_base_publication(row,base)) for row in records)
             if not count: raise HTTPException(422,'Añade artículos antes de analizar.')
             if count>500: raise HTTPException(422,'Este prototipo analiza como máximo 500 artículos por revisión.')
             if db.execute("SELECT 1 FROM jobs WHERE status='running'").fetchone(): raise HTTPException(409,'Ya hay un análisis en curso. Espera a que termine.')
@@ -387,7 +405,9 @@ def create_app(database_path=None):
     def evaluation(review_id:int,payload:AnalysisInput):
         with connect(path) as db:
             review=get_review(db,review_id)
+            base=base_snapshot(db,review_id)
             rows=[dict(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? AND decision_version=? ORDER BY id',(review_id,review['protocol_version']))]
+            if base: rows=[row for row in rows if not is_base_publication(row,base)]
         try:
             result=evaluate(rows,payload.engine)
         except ValueError as error:
@@ -408,13 +428,17 @@ def create_app(database_path=None):
             published_row=db.execute('SELECT snapshot,confirmed FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
             if published_row and not published_row['confirmed']:
                 raise HTTPException(422,'Confirma el método del estudio base antes de generar un reporte.')
-            articles=[article_json(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY id',(review_id,))]
+            base=json.loads(published_row['snapshot']) if published_row else None
+            all_articles=[article_json(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY id',(review_id,))]
+            legacy_base_records=[article for article in all_articles if base and is_base_publication(article,base)]
+            articles=[article for article in all_articles if article not in legacy_base_records]
             if not articles: raise HTTPException(422,'Añade artículos antes de generar el reporte.')
             history=[{**dict(row),'payload':json.loads(row['payload'])} for row in db.execute('SELECT * FROM events WHERE review_id=? ORDER BY id',(review_id,))]
             review.pop('base_text',None)
             published_base={**json.loads(published_row['snapshot']),'confirmed':bool(published_row['confirmed'])} if published_row else None
-            snapshot={'schema_version':2,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.']}
+            snapshot={'schema_version':3,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'legacy_base_records':legacy_base_records,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.']}
             snapshot['decisions_needing_recheck']=[a['id'] for a in articles if a['decision']!='pending' and a['decision_version']!=review['protocol_version']]
+            snapshot['status']='draft' if snapshot['counts']['pending'] or snapshot['decisions_needing_recheck'] else 'screened'
             serialized=json.dumps(snapshot,ensure_ascii=False,sort_keys=True)
             digest=hashlib.sha256(serialized.encode()).hexdigest()
             version=db.execute('SELECT coalesce(max(version),0)+1 FROM reports WHERE review_id=?',(review_id,)).fetchone()[0]
@@ -426,7 +450,14 @@ def create_app(database_path=None):
     def reports(review_id:int):
         with connect(path) as db:
             get_review(db,review_id)
-            return [dict(row) for row in db.execute('SELECT id,version,sha256,created_at FROM reports WHERE review_id=? ORDER BY version DESC',(review_id,))]
+            rows=db.execute('SELECT id,version,sha256,created_at,snapshot FROM reports WHERE review_id=? ORDER BY version DESC',(review_id,)).fetchall()
+            result=[]
+            for row in rows:
+                item={key:row[key] for key in ('id','version','sha256','created_at')}
+                data=json.loads(row['snapshot'])
+                item['status']=data.get('status') or ('draft' if data.get('counts',{}).get('pending') or data.get('decisions_needing_recheck') else 'screened')
+                result.append(item)
+            return result
 
     @app.get('/api/reports/{report_id}.json')
     def report_download(report_id:int):
@@ -447,10 +478,10 @@ def create_app(database_path=None):
         base_section=''
         if base:
             categories=''.join('<li>'+escape(item['name'])+': '+escape(item['count'])+'</li>' for item in base['application_counts'])
-            base_section=f'''<h2>Estudio original publicado</h2><p>DOI: {escape(base['doi'])}. Estudios incluidos en la publicación: {escape(base['original_count'])}. Método confirmado en esta aplicación: {"sí" if base['confirmed'] else "no"}.</p><p>Las categorías originales de la tabla 2 son:</p><ul>{categories}</ul><p>Los estudios originales están separados de los candidatos nuevos. La búsqueda en OpenAlex no reproduce la estrategia de las cuatro bases originales.</p>'''
+            base_section=f'''<h2>Estudio original publicado</h2><p>DOI: {escape(base['doi'])}. Estudios incluidos en la publicación: {escape(base['original_count'])}. Método confirmado en esta aplicación: {"sí" if base['confirmed'] else "no"}.</p><p>Las categorías originales de la tabla 2 son:</p><ul>{categories}</ul><p>Los estudios originales están separados de los candidatos nuevos. {len(data.get('legacy_base_records',[]))} registro(s) histórico(s) de la propia revisión base se conservan en el JSON y se excluyen del recuento de candidatos. Las búsquedas en DOAJ y OpenAlex no reproducen la estrategia de las cuatro bases originales.</p>'''
         document=f'''<!doctype html><html lang="es"><meta charset="utf-8"><title>Reporte v{row['version']}</title>
         <style>body{{font:15px/1.65 Arial,sans-serif;color:#34313d;background:white;margin:40px;max-width:1100px}}h1,h2{{color:#5f4778}}table{{width:100%;border-collapse:collapse;font-size:12px}}td,th{{padding:9px;border:1px solid #e4e2eb;text-align:left;overflow-wrap:anywhere}}th{{background:#f5f2f8}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{overflow-wrap:anywhere}}@media print{{body{{margin:15px}}tr{{break-inside:avoid}}}}</style>
-        <h1>{escape(review['title'])}</h1><p>Reporte de actualización v{row['version']} · {escape(data['created_at'])}</p>
+        <h1>{escape(review['title'])}</h1><p>Reporte de actualización v{row['version']} · {escape(data['created_at'])}</p><p><strong>{'Borrador de cribado: quedan artículos pendientes o decisiones por revisar.' if data.get('status')=='draft' else 'Cribado registrado: verifica la cobertura antes de usar este reporte como síntesis final.'}</strong></p>
         {base_section}<h2>Protocolo v{review['protocol_version']}</h2><p>{escape(review['question'])}</p>
         <p>Revisión base: {escape(review['base_reference'])}</p><h3>Inclusión</h3><pre>{escape(review['inclusion'])}</pre><h3>Exclusión</h3><pre>{escape(review['exclusion'])}</pre>
         <h2>Registro de evidencia</h2><p>Incluidos: {data['counts']['included']} · Excluidos: {data['counts']['excluded']} · Pendientes: {data['counts']['pending']}</p>
@@ -464,7 +495,9 @@ def create_app(database_path=None):
     def export_csv(review_id:int):
         with connect(path) as db:
             get_review(db,review_id)
+            base=base_snapshot(db,review_id)
             records=[dict(row) for row in db.execute('SELECT title,doi,year,authors,source,decision,reason,score FROM articles WHERE review_id=? ORDER BY id',(review_id,))]
+            if base: records=[row for row in records if not is_base_publication(row,base)]
         fields=['title','doi','year','authors','source','decision','reason','score']
         output=io.StringIO(); writer=csv.DictWriter(output,fieldnames=fields); writer.writeheader()
         for record in records:

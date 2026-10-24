@@ -1,5 +1,6 @@
 """The publication's historical studies must never become newly found candidates."""
 import io
+import time
 from datetime import date
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 
 from backend.app.main import create_app
 from backend.app.published import DOI
+from backend.app.storage import connect
 
 
 def sample_pdf():
@@ -59,12 +61,34 @@ def test_published_base_confirmation_search_cutoff_and_snapshot(tmp_path, monkey
         assert len(client.get(f'/api/reviews/{rid}/articles').json()) == 1
         assert client.post(f'/api/reviews/{rid}/articles', json={'title':base['title'],'doi':base['doi']}).json()['added'] == 0
         assert client.post(f'/api/reviews/{rid}/search',json={'query':'artificial intelligence','year_from':2021,'year_to':2100,'date_to':'2100-01-01'}).status_code==422
+        # A legacy database can contain the base review from searches made before the safeguard.
+        with connect(database) as db:
+            db.execute('INSERT INTO articles (review_id,identity,title,doi,year,source,decision,reason,decision_version) VALUES (?,?,?,?,?,?,?,?,?)',
+                       (rid,'doi:'+DOI,base['title'],DOI,2022,'DOAJ','excluded','Es la revisión base.',2))
+        listed=client.get(f'/api/reviews/{rid}/articles').json()
+        assert len(listed)==2 and sum(article['is_base_publication'] for article in listed)==1
+        assert next(row for row in client.get('/api/reviews').json() if row['id']==rid)['article_count']==1
         report = client.post(f'/api/reviews/{rid}/reports').json()
         snapshot = client.get(f'/api/reports/{report["id"]}.json').json()
         assert snapshot['published_base']['original_count'] == 31
         assert len(snapshot['articles']) == 1
+        assert snapshot['counts']=={'included':0,'excluded':0,'pending':1}
+        assert len(snapshot['legacy_base_records'])==1
+        assert snapshot['status']=='draft'
+        assert client.get(f'/api/reviews/{rid}/reports').json()[0]['status']=='draft'
+        assert base['title'] not in client.get(f'/api/reviews/{rid}/export.csv').text
         html = client.get(f'/api/reports/{report["id"]}.html').text
         assert 'Estudio original publicado' in html and '10.1186/s41239-022-00326-w' in html
+        assert 'Las búsquedas en DOAJ y OpenAlex' in html and 'Borrador de cribado' in html
+        job=client.post(f'/api/reviews/{rid}/analyze',json={'engine':'lexical'}).json()
+        end=time.monotonic()+10
+        while time.monotonic()<end:
+            state=client.get(f'/api/jobs/{job["id"]}').json()
+            if state['status']!='running': break
+            time.sleep(.02)
+        assert state['status']=='completed'
+        analysis_events=[item for item in client.get(f'/api/reviews/{rid}/history').json() if item['kind']=='analysis_completed']
+        assert analysis_events[0]['payload']['articles']==1
         client.post(f'/api/reviews/{rid}/base-pdf', files={'file': ('original.pdf', sample_pdf(), 'application/pdf')})
         assert client.get(f'/api/reviews/{rid}/published-base').json()['confirmed'] is False
         assert client.post(f'/api/reviews/{rid}/search', json={'query': 'artificial intelligence'}).status_code == 422
