@@ -164,7 +164,18 @@ def generate_cloud_review(review, article, pages, pdf_hash):
     if response.status_code in (401, 403):
         raise ValueError('La API rechazó la clave o el acceso al modelo. Revisa tu cuenta y la clave configurada.')
     if response.status_code == 429:
-        raise ValueError('La API alcanzó su cuota o límite temporal. Espera y revisa el uso de tu cuenta.')
+        try:
+            error = response.json().get('error') or {}
+            code = str(error.get('code') or error.get('type') or '').casefold()
+        except (ValueError, TypeError, AttributeError):
+            code = ''
+        if code in ('insufficient_quota', 'billing_hard_limit_reached', 'billing_not_active'):
+            raise ValueError('Tu cuenta de API no tiene cuota o presupuesto disponible. Revisa Facturación y Límites en platform.openai.com. La suscripción de ChatGPT no incluye saldo para la API.')
+        if code == 'rate_limit_exceeded':
+            delay = response.headers.get('Retry-After', '')
+            wait = f' Espera {delay} segundos antes de repetir.' if delay.isdigit() and 0 < int(delay) <= 3600 else ' Espera unos minutos antes de repetir.'
+            raise ValueError('La API alcanzó un límite temporal de solicitudes.' + wait)
+        raise ValueError('OpenAI respondió 429. Puede faltar cuota de API o haber un límite temporal. Revisa Facturación, Uso y Límites en platform.openai.com antes de repetir.')
     if response.status_code != 200:
         raise ValueError(f'La API del LLM respondió {response.status_code}. No se guardó ninguna propuesta.')
     try:

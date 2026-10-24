@@ -112,3 +112,32 @@ def test_cloud_request_sends_selected_passages_and_checks_quotes(monkeypatch):
     assert result['criteria'][0]['quote_verified'] is True
     assert result['criteria'][1]['quote_verified'] is False
     assert 'No debe mostrarse' not in result['criteria'][1]['explanation']
+
+
+@pytest.mark.parametrize(('code', 'retry_after', 'expected'), [
+    ('insufficient_quota', '', 'Facturación y Límites'),
+    ('rate_limit_exceeded', '30', 'Espera 30 segundos'),
+    ('', '', 'Puede faltar cuota'),
+])
+def test_cloud_429_explains_known_cause_without_echoing_provider_message(monkeypatch, code, retry_after, expected):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_OPENAI_API_KEY', 'test-secret')
+    class FakeResponse:
+        status_code = 429
+        headers = {'Retry-After': retry_after}
+        def json(self):
+            return {'error': {'code': code, 'message': 'PRIVATE_PROVIDER_MESSAGE'}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    review = {'inclusion': 'Estudio empírico', 'exclusion': 'Opinión', 'protocol_version': 1}
+    article = {'title': 'Candidate', 'doi': '10.1234/example'}
+    pages = [{'page': 1, 'text': 'Empirical study with university students in Latin America.'}]
+    with pytest.raises(ValueError) as caught:
+        llm_review.generate_cloud_review(review, article, pages, 'hash')
+    assert expected in str(caught.value)
+    assert 'PRIVATE_PROVIDER_MESSAGE' not in str(caught.value)
+    assert 'test-secret' not in str(caught.value)

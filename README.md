@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.10
+# Semantik SLR · versión 0.10.1
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -37,6 +37,8 @@ La versión 0.8 añadió **Texto completo** al expediente del candidato. **Busca
 La versión 0.9 añade un **asistente experimental con LLM local** que examina pasajes seleccionados de todas las páginas extraídas y propone una explicación por criterio. Cada cita se comprueba contra la página declarada: si no aparece, se oculta la explicación y el criterio queda incierto. La presencia textual no valida la interpretación ni la elegibilidad. El investigador conserva la decisión final. Las propuestas se guardan con modelo, hash del PDF y versión del protocolo; quedan obsoletas si cambia cualquiera de los dos. El informe y la clasificación semántica anterior aún no usan estas propuestas. Se reparan en la presentación algunos glifos numéricos de PDFs, como `/one.tnum` → `1`.
 
 La versión 0.10 permite elegir en el expediente entre **OpenAI en la nube (`gpt-4.1-mini`)** y **Ollama local (`qwen2.5:3b`)**. Ambos comparten la selección de pasajes y la verificación de citas. Al elegir nube y pulsar generar se envían título, DOI, criterios y hasta doce pasajes con su número de página a OpenAI; **no se envía el PDF completo**. La respuesta guarda proveedor, modelo y uso de tokens cuando la API lo informa. La clave se lee solo de `SEMANTIK_OPENAI_API_KEY` al arrancar el servidor; no se escribe en la base, reportes, historial ni interfaz. La API puede tener costo por uso y requiere una cuenta de API con acceso al modelo, distinta de una suscripción de ChatGPT. Esta integración se verificó con respuestas simuladas, no con una clave real en este entorno.
+
+La versión 0.10.1 distingue, cuando la API informa la causa, un **429 por cuota o presupuesto insuficiente** de un **límite temporal de solicitudes**. No muestra el mensaje completo del proveedor para evitar incluir datos sensibles. Ante falta de cuota, comprueba Facturación y Límites de tu cuenta de API; esperar por sí solo no añade saldo.
 
 Si una búsqueda antigua guardó la propia revisión base como candidato, el registro y su decisión se conservan como antecedente, pero ya no cuentan como estudio nuevo, no participan en nuevos análisis ni en la tabla CSV de candidatos. Un reporte nuevo conserva ese registro aparte en `legacy_base_records` del JSON. Mientras queden pendientes, el reporte se marca como **Borrador**. Los reportes anteriores siguen siendo instantáneas inmutables y conservan sus cifras históricas.
 

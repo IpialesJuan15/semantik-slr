@@ -1,5 +1,10 @@
 # Validación
 
+## Validación adicional de la entrega 0.10.1
+
+- Tras la primera prueba real en Windows, OpenAI respondió HTTP 429. El aviso original no distinguía cuota insuficiente de límite temporal; no se guardó ninguna propuesta. La causa exacta de la cuenta del investigador aún debe comprobarse en Facturación/Uso/Límites.
+- 25 pruebas Python aprobadas y compilación React/Vite correcta. Se añadieron respuestas 429 sintéticas para `insufficient_quota`, `rate_limit_exceeded` con `Retry-After` y error sin código. El aviso distingue los dos primeros y no devuelve el mensaje original del proveedor ni la clave. No se ha efectuado otra solicitud real desde este entorno.
+
 ## Validación adicional de la entrega 0.10
 
 - 22 pruebas Python aprobadas y compilación React/Vite correcta. Una prueba nueva simula la API en nube: verifica que solo se envían título, DOI, criterios y pasajes seleccionados, que se registran proveedor y tokens, y que una cita inventada no se presenta como evidencia. Otra verifica la elección de proveedor en la API. Ninguna prueba usa una clave real ni valida la calidad científica del modelo.
