@@ -1,4 +1,4 @@
-"""Experimental, locally generated screening suggestions with checked PDF quotes."""
+"""Experimental screening suggestions with checked PDF quotes."""
 
 import json
 import os
@@ -10,6 +10,8 @@ from .documents import clean_pdf_text
 
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
+CLOUD_MODEL = 'gpt-4.1-mini'
+CLOUD_URL = 'https://api.openai.com/v1/chat/completions'
 MAX_CRITERIA = 12
 
 
@@ -21,7 +23,7 @@ def criteria_for(review):
             if line:
                 criteria.append({'kind': kind, 'text': line})
     if not criteria or len(criteria) > MAX_CRITERIA:
-        raise ValueError('El asistente local admite de 1 a 12 criterios. Ajusta el protocolo o revisa manualmente este artículo.')
+        raise ValueError('El asistente admite de 1 a 12 criterios. Ajusta el protocolo o revisa manualmente este artículo.')
     return criteria
 
 
@@ -67,7 +69,7 @@ def present_in_page(quote, page_text):
     return compact(quote) in compact(page_text)
 
 
-def generate_local_review(review, article, pages, pdf_hash):
+def request_context(review, article, pages):
     criteria = criteria_for(review)
     passages = passages_for(pages, criteria)
     instructions = (
@@ -82,21 +84,12 @@ def generate_local_review(review, article, pages, pdf_hash):
     prompt = json.dumps({'article': {'title': article['title'], 'doi': article['doi']},
                          'criteria': [{'index': index, **item} for index, item in enumerate(criteria)],
                          'pdf_passages': passages}, ensure_ascii=False)
+    return criteria, passages, instructions, prompt
+
+
+def checked_result(raw_text, criteria, passages, pages, review, pdf_hash, provider, model, usage=None):
     try:
-        with httpx.Client(timeout=httpx.Timeout(180, connect=5), trust_env=False) as client:
-            response = client.post(OLLAMA_URL, json={'model': MODEL, 'system': instructions,
-                'prompt': prompt, 'format': 'json', 'stream': False,
-                'options': {'temperature': 0, 'num_ctx': 8192, 'num_predict': 2200}})
-    except httpx.ConnectError:
-        raise ValueError('Ollama local no está activo. Instálalo, ejecuta «ollama pull qwen2.5:3b» y vuelve a intentar.') from None
-    except httpx.TimeoutException:
-        raise ValueError('El LLM local tardó demasiado. Comprueba que Ollama siga activo y vuelve a intentar.') from None
-    except httpx.HTTPError:
-        raise ValueError('No se pudo consultar el LLM local. Comprueba Ollama y vuelve a intentar.') from None
-    if response.status_code != 200:
-        raise ValueError('Ollama no pudo generar la revisión. Comprueba que el modelo qwen2.5:3b esté descargado.')
-    try:
-        raw = json.loads(response.json()['response'])
+        raw = json.loads(raw_text)
         raw_items = raw['items']
         if not isinstance(raw_items, list): raise ValueError()
     except (ValueError, KeyError, TypeError):
@@ -123,7 +116,64 @@ def generate_local_review(review, article, pages, pdf_hash):
                         'explanation': str(proposal.get('explanation', ''))[:400] if valid else
                         'No se obtuvo una cita textual comprobable para este criterio.',
                         'quote_verified': bool(valid)})
-    return {'model': MODEL, 'document_sha256': pdf_hash,
+    return {'provider': provider, 'model': model, 'document_sha256': pdf_hash,
             'protocol_version': review['protocol_version'], 'passages_examined': len(passages),
-            'criteria': results, 'scope': 'experimental_pdf_passages',
+            'criteria': results, 'scope': 'experimental_pdf_passages', 'usage': usage or {},
             'warning': 'Cita presente en el PDF no significa interpretación correcta. Verifica cada criterio y decide tú.'}
+
+
+def generate_local_review(review, article, pages, pdf_hash):
+    criteria, passages, instructions, prompt = request_context(review, article, pages)
+    try:
+        with httpx.Client(timeout=httpx.Timeout(180, connect=5), trust_env=False) as client:
+            response = client.post(OLLAMA_URL, json={'model': MODEL, 'system': instructions,
+                'prompt': prompt, 'format': 'json', 'stream': False,
+                'options': {'temperature': 0, 'num_ctx': 8192, 'num_predict': 2200}})
+    except httpx.ConnectError:
+        raise ValueError('Ollama local no está activo. Instálalo, ejecuta «ollama pull qwen2.5:3b» y vuelve a intentar.') from None
+    except httpx.TimeoutException:
+        raise ValueError('El LLM local tardó demasiado. Comprueba que Ollama siga activo y vuelve a intentar.') from None
+    except httpx.HTTPError:
+        raise ValueError('No se pudo consultar el LLM local. Comprueba Ollama y vuelve a intentar.') from None
+    if response.status_code != 200:
+        raise ValueError('Ollama no pudo generar la revisión. Comprueba que el modelo qwen2.5:3b esté descargado.')
+    try: raw_text = response.json()['response']
+    except (ValueError, KeyError, TypeError):
+        raise ValueError('Ollama devolvió una respuesta no reconocida.') from None
+    return checked_result(raw_text, criteria, passages, pages, review, pdf_hash, 'local', MODEL)
+
+
+def generate_cloud_review(review, article, pages, pdf_hash):
+    key = os.getenv('SEMANTIK_OPENAI_API_KEY', '').strip()
+    if not key:
+        raise ValueError('Falta SEMANTIK_OPENAI_API_KEY. Configura tu clave en la terminal que inicia la aplicación; no la pegues en el chat.')
+    criteria, passages, instructions, prompt = request_context(review, article, pages)
+    try:
+        with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
+            response = client.post(CLOUD_URL,
+                headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+                json={'model': CLOUD_MODEL, 'messages': [
+                    {'role': 'system', 'content': instructions},
+                    {'role': 'user', 'content': prompt}],
+                    'response_format': {'type': 'json_object'},
+                    'temperature': 0, 'max_completion_tokens': 2200})
+    except httpx.TimeoutException:
+        raise ValueError('El LLM en la nube tardó demasiado. Vuelve a intentar más tarde.') from None
+    except httpx.HTTPError:
+        raise ValueError('No se pudo conectar con el LLM en la nube. Comprueba Internet y vuelve a intentar.') from None
+    if response.status_code in (401, 403):
+        raise ValueError('La API rechazó la clave o el acceso al modelo. Revisa tu cuenta y la clave configurada.')
+    if response.status_code == 429:
+        raise ValueError('La API alcanzó su cuota o límite temporal. Espera y revisa el uso de tu cuenta.')
+    if response.status_code != 200:
+        raise ValueError(f'La API del LLM respondió {response.status_code}. No se guardó ninguna propuesta.')
+    try:
+        payload = response.json()
+        raw_text = payload['choices'][0]['message']['content']
+        usage = payload.get('usage') or {}
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise ValueError('La API devolvió una respuesta no reconocida. No se guardó ninguna propuesta.') from None
+    safe_usage = {field: int(usage[field]) for field in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+                  if isinstance(usage.get(field), int) and usage[field] >= 0}
+    return checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
+                          'cloud', CLOUD_MODEL, safe_usage)

@@ -19,7 +19,7 @@ from pypdf import PdfReader
 from .analysis import analyze, MODEL
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
-from .llm_review import generate_local_review
+from .llm_review import generate_cloud_review, generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
 from .storage import article_json, connect, event, initialize
@@ -80,6 +80,9 @@ class DecisionInput(BaseModel):
 class AnalysisInput(BaseModel):
     engine: Literal['lexical', 'semantic'] = 'lexical'
 
+class LLMReviewInput(BaseModel):
+    provider: Literal['local', 'cloud'] = 'local'
+
 class PublishedInput(BaseModel):
     doi: str = Field(min_length=3, max_length=300)
 
@@ -119,7 +122,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.9.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.10.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -205,7 +208,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.9.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'mode':'local_single_user', 'version':'0.10.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -375,7 +378,7 @@ def create_app(database_path=None):
         return {'status': 'ready', 'created_at': row['created_at'], **json.loads(row['result_json'])} if row else {'status': 'missing'}
 
     @app.post('/api/articles/{article_id}/document/llm-review')
-    def create_document_review(article_id: int):
+    def create_document_review(article_id: int, payload: LLMReviewInput = LLMReviewInput()):
         with connect(path) as db:
             article = dict(get_candidate(db, article_id))
             review = get_review(db, article['review_id'])
@@ -384,7 +387,8 @@ def create_app(database_path=None):
         if document['truncated']:
             raise HTTPException(422, 'La extracción del PDF quedó incompleta. Revisa el archivo antes de usar el LLM.')
         try:
-            result = generate_local_review(review, article, json.loads(document['pages_json']), document['sha256'])
+            generator = generate_cloud_review if payload.provider == 'cloud' else generate_local_review
+            result = generator(review, article, json.loads(document['pages_json']), document['sha256'])
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
         with connect(path) as db:
@@ -396,7 +400,7 @@ def create_app(database_path=None):
             db.execute('INSERT INTO document_reviews (article_id,protocol_version,document_sha256,model,result_json) VALUES (?,?,?,?,?)',
                        (article_id, review['protocol_version'], document['sha256'], result['model'], json.dumps(result, ensure_ascii=False)))
             event(db, article['review_id'], 'llm_pdf_review_created',
-                  {'article_id': article_id, 'model': result['model'], 'protocol_version': review['protocol_version'],
+                  {'article_id': article_id, 'provider': payload.provider, 'model': result['model'], 'protocol_version': review['protocol_version'],
                    'document_sha256': document['sha256'], 'verified_quotes': sum(item['quote_verified'] for item in result['criteria'])})
         return {'status': 'ready', **result}
 

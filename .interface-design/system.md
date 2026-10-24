@@ -40,4 +40,8 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 
 - **Asistente local**: dentro del documento, bajo la vista previa y antes de las pistas semánticas. Presenta una propuesta por criterio con cita/página o incertidumbre explícita. El bloque se nombra «Asistente de lectura del PDF» para distinguirlo de la decisión humana y de los puntajes de título/resumen.
 
+## Ajuste de la versión 0.10
+
+- **Proveedor del LLM**: un selector etiquetado dentro del asistente ofrece nube o equipo. La explicación inmediatamente debajo declara qué pasajes se envían, el posible costo y el requisito de clave. La propuesta conserva el nombre del proveedor, sin mezclarla con la decisión humana.
+
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.

@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.10
+
+- 22 pruebas Python aprobadas y compilación React/Vite correcta. Una prueba nueva simula la API en nube: verifica que solo se envían título, DOI, criterios y pasajes seleccionados, que se registran proveedor y tokens, y que una cita inventada no se presenta como evidencia. Otra verifica la elección de proveedor en la API. Ninguna prueba usa una clave real ni valida la calidad científica del modelo.
+- Chromium con base sintética aislada, a 1365 y 390 px: selector nube/local, aviso sobre datos enviados y costos, y error claro al no configurar la clave. Sin errores JavaScript ni desbordamiento horizontal. Una propuesta anterior permanece visible con su proveedor al fallar una nueva solicitud.
+- Pendiente: prueba real con clave de API del investigador, revisión humana de las citas y comparativa controlada frente a Ollama. El usuario no debe compartir la clave por chat ni guardarla en Git.
+
 ## Validación adicional de la entrega 0.9
 
 - El investigador comprobó en Windows la descarga automática del artículo de Bashayer (DOI `10.3389/fpsyg.2023.1129070`): 16 páginas y 92 707 caracteres extraídos. El PDF está disponible en la fuente de Frontiers y la app guardó su procedencia. El texto extraído presentó glifos numéricos como `/one.tnum`; la nueva versión repara estos patrones en la vista y antes de seleccionar pasajes. La coincidencia de título/DOI y las interpretaciones siguen requiriendo cotejo humano.
