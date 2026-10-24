@@ -24,4 +24,12 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 - **Análisis**: se ejecuta en la misma vista de artículos. Tras completarse, las opciones se recogen y se privilegia la lectura. La evaluación exploratoria queda en un desplegable secundario.
 - **Lectura y decisión**: lista y expediente visibles juntos en escritorio; en móvil la elección lleva al expediente. Guardar una decisión avanza al siguiente pendiente. Las recomendaciones automáticas permanecen separadas de la decisión humana.
 
+## Ajustes de la versión 0.7
+
+- **Búsqueda visible**: la última consulta muestra fuente, intervalo, consulta y recuperados frente al total declarado por la fuente. El aviso de resultados por recorrer es ámbar; nunca se presenta como cobertura exhaustiva.
+- **Filtros reconocibles**: cada filtro de la lista tiene una etiqueta visible. Los años proceden de la última búsqueda registrada; cambiar la siguiente consulta no altera la vista guardada. La lista indica con palabras que filtrar no borra datos.
+- **Decisiones antiguas**: el aviso del protocolo lleva directamente a los registros afectados y abre el siguiente después de guardar. El investigador puede distinguir proyectos con el mismo título por número y fecha.
+- **Expediente**: título, procedencia, resumen y formulario de decisión tienen una jerarquía clara. Los fragmentos automáticos son un desplegable secundario, etiquetado como parecido textual que requiere cotejo; ningún puntaje se presenta como probabilidad o prueba.
+- **Informes**: antes de crear un reporte con pendientes, un aviso explica que será un borrador y ofrece volver al trabajo de revisión.
+
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.

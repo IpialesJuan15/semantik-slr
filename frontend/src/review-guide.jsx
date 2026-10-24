@@ -1,8 +1,8 @@
 import React from 'react'
 
-export function ReviewGuide({base,articles,job,busy,onBase,onSearch,onAnalyze,onReview,onReport}){
+export function ReviewGuide({base,articles,job,busy,protocolVersion,staleCount,onBase,onSearch,onAnalyze,onReview,onRecheck,onReport}){
  const pending=articles.filter(article=>article.decision==='pending')
- const reviewed=articles.length-pending.length
+ const reviewed=articles.filter(article=>article.decision!=='pending'&&article.decision_version===protocolVersion).length
  const hasAnalysis=articles.length>0&&articles.every(article=>article.analysis)
  let title,description,action,label
  if(base&&!base.confirmed){
@@ -17,6 +17,10 @@ export function ReviewGuide({base,articles,job,busy,onBase,onSearch,onAnalyze,on
   title='Estamos comparando los artículos'
   description='El análisis puede tardar unos minutos. Al terminar, vuelve aquí para leer la evidencia y decidir.'
   action=null;label='Análisis en curso'
+ }else if(staleCount){
+  title=`Actualiza ${staleCount} ${staleCount===1?'decisión anterior':'decisiones anteriores'}`
+  description='El protocolo cambió. Comprueba estos registros y vuelve a guardar su motivo para que el informe use la versión actual.'
+  action=onRecheck;label='Revisar decisiones'
  }else if(!pending.length){
   title='Prepara el informe de actualización'
   description='Todos los candidatos tienen una decisión. Puedes generar un reporte con la evidencia y el historial.'

@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.6.1
+# Semantik SLR · versión 0.7
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/reporte-candidatos
+git switch --track origin/feature/experiencia-investigador
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/reporte-candidatos` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/experiencia-investigador` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -29,6 +29,8 @@ Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paque
 6. Genera un reporte. El JSON guarda el estudio base y los nuevos candidatos por separado; el HTML muestra DOI, recuentos originales y decisiones nuevas.
 
 Los resultados tabulares **todavía no se actualizan automáticamente** al incluir un artículo. La siguiente fase incorporará extracción estructurada, confirmación de campos del nuevo estudio y cálculo de cambios de cada tabla.
+
+La versión 0.7 hace visible la última búsqueda y cuántos resultados de la fuente quedaron sin recorrer. La lista de lectura muestra filtros con nombre, usa los años de la última búsqueda sin borrar candidatos y permite ir directamente a decisiones de un protocolo anterior. El expediente pone el resumen, las fuentes y la decisión a la vista; los fragmentos automáticos se abren cuando se necesiten y se describen como pistas, no como pruebas. En Informes se avisa antes de generar un borrador con decisiones pendientes. La biblioteca identifica cada proyecto por número y fecha para distinguir revisiones con el mismo título.
 
 Si una búsqueda antigua guardó la propia revisión base como candidato, el registro y su decisión se conservan como antecedente, pero ya no cuentan como estudio nuevo, no participan en nuevos análisis ni en la tabla CSV de candidatos. Un reporte nuevo conserva ese registro aparte en `legacy_base_records` del JSON. Mientras queden pendientes, el reporte se marca como **Borrador**. Los reportes anteriores siguen siendo instantáneas inmutables y conservan sus cifras históricas.
 

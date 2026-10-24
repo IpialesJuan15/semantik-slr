@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.7
+
+- Compilación React/Vite y 16 pruebas Python aprobadas. Sin nuevas dependencias ni cambios en los datos del investigador.
+- En Chromium, con base sintética aislada, se verificaron escritorio de 1365 px y móvil de 390 px: recibo de búsqueda parcial, acceso a decisión antigua y retorno al flujo pendiente, filtro de años 2021–2024 que oculta el registro de 2026, apertura de expediente y fragmentos, aviso de borrador del informe y revisión publicada con sus 31 estudios originales. No hubo errores JavaScript ni desbordamiento horizontal.
+- La prueba detectó y corrigió una confusión previa: al recargar una revisión, los años de la lista ahora siguen la última búsqueda registrada, aunque el valor predeterminado del formulario sea la fecha de hoy.
+
 ## Validación adicional de la entrega 0.6.1
 
 - El investigador probó en Windows la búsqueda DOAJ acotada al 2021-07-01–2024-12-31: recuperó 25 candidatos de 994 resultados declarados por la fuente. La consulta funciona allí, pero solo recorrió la primera página y no representa una búsqueda exhaustiva.
