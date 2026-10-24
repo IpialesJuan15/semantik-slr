@@ -125,7 +125,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.13.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.13.1', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -211,7 +211,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.13.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.13.1'}
 
     @app.get('/api/published-template')
     def published_template_info():

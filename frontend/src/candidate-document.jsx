@@ -8,6 +8,7 @@ function describeAssessment(item){
  if(item.analyzed===false)return 'Sin consultar'
  if(item.evidence_status==='model_uncertain')return 'El modelo no pudo determinarlo'
  if(item.evidence_status==='quote_unverified')return 'Cita no verificable'
+ if(item.assessment==='incierto'&&item.quote_verified)return 'Evidencia parcial · revisa el criterio completo'
  if(item.assessment==='incierto'||!item.quote_verified)return 'Falta evidencia comprobable'
  if(item.kind==='inclusion')return item.assessment==='apoya'?'Sugiere que cumple este criterio':'Sugiere que no cumple este criterio'
  return item.assessment==='apoya'?'Sugiere que este motivo de exclusión aplica':'Sugiere que este motivo de exclusión no aplica'
