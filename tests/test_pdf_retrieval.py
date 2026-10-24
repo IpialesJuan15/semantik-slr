@@ -49,3 +49,20 @@ def test_geography_prefers_candidate_study_and_excludes_bibliography(tmp_path, m
     assert result['passages']
     assert all(p['page']==1 for p in result['passages'])
     assert 'Saudi postgraduate students' in result['passages'][0]['text']
+
+
+def test_author_contributions_do_not_count_as_study_evidence(tmp_path, monkeypatch):
+    class Encoder:
+        def embed(self, texts, **kwargs):
+            for text in texts:
+                vector=np.zeros(384);vector[0]=1
+                yield vector
+    monkeypatch.setattr(r,'semantic_model',lambda: Encoder())
+    pages=[
+        {'page':1,'text':'The study sample consisted of Saudi postgraduate students at King Faisal University. '*7},
+        {'page':14,'text':'Participants agreed to participate in this study. Author contributions AAl-A implemented the study. '*8},
+        {'page':15,'text':'References\nA Latin American conference paper.'},
+    ]
+    result=r.retrieve_passages(pages,[{'text':'Datos de América Latina'}], 'pdf', tmp_path/'back.db')
+    assert result['passages']
+    assert all(item['page']==1 for item in result['passages'])

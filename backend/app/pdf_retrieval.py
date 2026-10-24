@@ -13,9 +13,11 @@ from .storage import connect
 
 LOCK = threading.Lock()
 REFERENCE_HEADING = re.compile(r'(?im)^\s*(references|bibliography|referencias|bibliografía)\s*$')
+BACK_MATTER = re.compile(r'\b(author contributions|author information|acknowledg(?:e)?ments|conflict of interest|declaration of competing interests|contribuciones de los autores|agradecimientos|financiación)\b', re.I)
 MAIN_STUDY = re.compile(r'\b(this study|the present study|our study|study sample|participants|setting and sample|research methodology|we conducted|we recruited|investigation|este estudio|la presente investigación|la muestra|participantes|método|metodología|investigação|amostra)\b', re.I)
 CITED_WORK = re.compile(r'\b(et al\.|according to|previous studies|prior studies|studies have|researchers have|según|estudios previos)\b|\([^)]*\b(?:19|20)\d{2}\b[^)]*\)', re.I)
 PLACE_CRITERION = re.compile(r'am[eé]rica latina|latin america|latinoam[eé]rica|pa[ií]s|country|geogr[aá]f|regi[oó]n', re.I)
+LOCATION_CUE = re.compile(r'\b(?:in|at|from|en|de|em)\s+(?:(?:a|an|the|una|un|la|el)\s+)?[A-ZÁÉÍÓÚ][\wÀ-ÿ-]+(?:\s+[A-ZÁÉÍÓÚ][\wÀ-ÿ-]+){0,4}\b')
 
 
 def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic', limit=6):
@@ -24,10 +26,12 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
     for page in pages:
         text = clean_pdf_text(page['text'])
         heading = REFERENCE_HEADING.search(text)
+        back_matter = BACK_MATTER.search(text)
         if bibliography:
             continue
-        if heading:
-            text = text[:heading.start()]
+        cut = min((match.start() for match in (heading, back_matter) if match), default=None)
+        if cut is not None:
+            text = text[:cut]
             bibliography = True
         start = 0
         while start < len(text):
@@ -85,7 +89,7 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
     selected = []
     counts = {}
     for i in np.argsort(-np.asarray(adjusted), kind='stable'):
-        if geography and not MAIN_STUDY.search(chunks[int(i)]['text']):
+        if geography and (not MAIN_STUDY.search(chunks[int(i)]['text']) or not LOCATION_CUE.search(chunks[int(i)]['text'])):
             continue
         if method == 'lexical' and scores[int(i)] <= 0:
             continue
