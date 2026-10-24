@@ -92,10 +92,26 @@ def request_context(review, article, pages):
 def checked_result(raw_text, criteria, passages, pages, review, pdf_hash, provider, model, usage=None):
     try:
         raw = json.loads(raw_text)
-        raw_items = raw['items']
-        if not isinstance(raw_items, list): raise ValueError()
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, TypeError):
+        raw = None
+        if isinstance(raw_text, str):
+            decoder = json.JSONDecoder()
+            for match in re.finditer(r'\{', raw_text):
+                try:
+                    candidate, _ = decoder.raw_decode(raw_text[match.start():])
+                except ValueError:
+                    continue
+                if isinstance(candidate, dict) and ('items' in candidate or 'assessment' in candidate):
+                    raw = candidate
+                    break
+    if not isinstance(raw, dict):
         raise ValueError('El LLM devolvió una respuesta no estructurada. Vuelve a intentar o revisa el PDF manualmente.') from None
+    if isinstance(raw.get('items'), list):
+        raw_items = raw['items']
+    elif len(criteria) == 1 and 'assessment' in raw:
+        raw_items = [{**raw, 'index': 0}]
+    else:
+        raise ValueError('El LLM devolvió una respuesta no estructurada. Vuelve a intentar o revisa el PDF manualmente.')
     by_index = {}
     for item in raw_items:
         if isinstance(item, dict) and str(item.get('index', '')).isdigit():
@@ -204,8 +220,17 @@ def generate_groq_review(review, article, pages, pdf_hash, criterion_index):
     single_review = {**review,
                      'inclusion': chosen['text'] if chosen['kind'] == 'inclusion' else '',
                      'exclusion': chosen['text'] if chosen['kind'] == 'exclusion' else ''}
-    criteria, passages, instructions, prompt = request_context(single_review, article, pages)
-    instructions += ' Responde solo al criterio indicado. Cita un fragmento exacto de hasta 150 caracteres y explica en hasta 25 palabras. Mantén el JSON breve.'
+    criteria, passages, _, prompt = request_context(single_review, article, pages)
+    instructions = (
+        'Eres un asistente de cribado de revisiones sistemáticas. Responde en español con un único '
+        'objeto JSON: {"assessment":"apoya|contradice|incierto","page":1,'
+        '"quote":"cita textual exacta","explanation":"explicación breve"}. '
+        'Evalúa solamente el criterio del usuario. Cita un pasaje exacto de hasta 150 caracteres de '
+        'pdf_passages, con su página, y explica en hasta 25 palabras. Si no hay cita relevante, usa '
+        'incierto, page null y quote vacío. No inventes país, fecha, páginas ni citas. '
+        'Un pasaje de otro estudio citado no demuestra el lugar del estudio principal. '
+        'No incluyas razonamiento previo ni bloques Markdown. La decisión final es humana.'
+    )
     try:
         with httpx.Client(timeout=httpx.Timeout(90, connect=10)) as client:
             response = client.post(GROQ_URL,
@@ -226,12 +251,15 @@ def generate_groq_review(review, article, pages, pdf_hash, criterion_index):
         raise ValueError(f'Groq respondió {response.status_code}. No se guardó ninguna propuesta.')
     try:
         payload = response.json()
-        raw_text = payload['choices'][0]['message']['content']
+        choice = payload['choices'][0]
+        raw_text = choice['message']['content']
         usage = payload.get('usage') or {}
     except (ValueError, KeyError, IndexError, TypeError):
         raise ValueError('Groq devolvió una respuesta no reconocida. No se guardó ninguna propuesta.') from None
     safe_usage = {field: int(usage[field]) for field in ('prompt_tokens', 'completion_tokens', 'total_tokens')
                   if isinstance(usage.get(field), int) and usage[field] >= 0}
+    if choice.get('finish_reason') == 'length':
+        raise ValueError('Groq agotó los 300 tokens de respuesta antes de terminar el JSON. Espera al menos un minuto y vuelve a intentar este criterio; no se guardó ninguna propuesta.')
     result = checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
                             'groq', GROQ_MODEL, safe_usage)
     result['criterion_index'] = criterion_index

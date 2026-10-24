@@ -178,6 +178,50 @@ def test_groq_uses_exact_model_and_free_tier_output_cap(monkeypatch):
     assert result['usage']['total_tokens'] == 295
 
 
+@pytest.mark.parametrize('content', [
+    '{"assessment":"contradice","page":8,"quote":"Saudi postgraduate students at King Faisal University","explanation":"El estudio es saudí."}',
+    'assistant\n```json\n{"assessment":"contradice","page":8,"quote":"Saudi postgraduate students at King Faisal University","explanation":"El estudio es saudí."}\n```',
+])
+def test_groq_accepts_single_criterion_json_and_fenced_response(monkeypatch, content):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {'choices': [{'message': {'content': content}, 'finish_reason': 'stop'}]}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    review = {'inclusion': 'Datos de América Latina', 'exclusion': 'Opinión', 'protocol_version': 3}
+    pages = [{'page': 8, 'text': 'The study included Saudi postgraduate students at King Faisal University in 2023.'}]
+    result = llm_review.generate_groq_review(review, {'title': 'Study', 'doi': '10.1234/example'}, pages, 'hash', 0)
+    assert result['criteria'][0]['assessment'] == 'contradice'
+    assert result['criteria'][0]['quote_verified'] is True
+
+
+def test_groq_explains_truncated_json_without_saving(monkeypatch):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {'choices': [{'message': {'content': '{"assessment":"contradice"'}, 'finish_reason': 'length'}]}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    with pytest.raises(ValueError, match='agotó los 300 tokens'):
+        llm_review.generate_groq_review(
+            {'inclusion': 'Datos de América Latina', 'exclusion': '', 'protocol_version': 3},
+            {'title': 'Study', 'doi': '10.1234/example'},
+            [{'page': 8, 'text': 'Saudi postgraduate students at King Faisal University in 2023.'}], 'hash', 0)
+
+
 def test_groq_reviews_accumulate_per_criterion_without_changing_human_decision(tmp_path, monkeypatch):
     from backend.app import main
     with TestClient(create_app(tmp_path / 'groq.sqlite3')) as client:
