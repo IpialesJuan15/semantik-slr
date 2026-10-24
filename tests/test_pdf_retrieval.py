@@ -66,3 +66,24 @@ def test_author_contributions_do_not_count_as_study_evidence(tmp_path, monkeypat
     result=r.retrieve_passages(pages,[{'text':'Datos de América Latina'}], 'pdf', tmp_path/'back.db')
     assert result['passages']
     assert all(item['page']==1 for item in result['passages'])
+
+
+def test_compound_criterion_returns_setting_and_tool_separately(tmp_path, monkeypatch):
+    class Encoder:
+        def embed(self, texts, **kwargs):
+            for text in texts:
+                vector=np.zeros(384);vector[0]=1
+                yield vector
+    monkeypatch.setattr(r,'semantic_model',lambda: Encoder())
+    pages=[
+        {'page':2,'text':('This investigation involved eight TESOL students at a Costa Rican public university, ten university professors and one AI piece of software. ')*4},
+        {'page':11,'text':('This study used a language elicitation process. The AI-written texts were created using copy.ai. ')*5},
+        {'page':18,'text':'References\nMachine learning in Latin American higher education. '*5},
+    ]
+    result=r.retrieve_passages(pages,[{'text':'Datos sobre aplicaciones de IA en instituciones de educación superior de América Latina, en particular ML, DL o NLP.'}], 'compound',tmp_path/'compound.db')
+    assert result['facets']=={'setting_found':True,'ai_tool_found':True,'technique_stated_in_passages':False}
+    by_facet={p['facet']:p for p in result['passages']}
+    assert by_facet['setting']['page']==2
+    assert by_facet['ai_tool']['page']==11
+    assert 'copy.ai' in by_facet['ai_tool']['text']
+    assert all(p['page'] != 18 for p in result['passages'])

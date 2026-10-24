@@ -125,7 +125,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.12.4', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.13.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -211,7 +211,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.12.4'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.13.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -426,7 +426,7 @@ def create_app(database_path=None):
             if context:
                 result['retrieval'] = context['retrieval']
                 for item in result['criteria']:
-                    item.update(retrieval=context['retrieval'], selected_passages=context['passages'], generated_at=datetime.now(timezone.utc).isoformat())
+                    item.update(retrieval=context['retrieval'], selected_passages=context['passages'], evidence_facets=context.get('facets'), generated_at=datetime.now(timezone.utc).isoformat())
         except ValueError as error:
             if hasattr(error, 'retry_after_seconds'):
                 raise HTTPException(429, {'message': str(error), 'retry_after_seconds': error.retry_after_seconds}) from None

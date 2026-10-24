@@ -18,6 +18,9 @@ MAIN_STUDY = re.compile(r'\b(this study|the present study|our study|study sample
 CITED_WORK = re.compile(r'\b(et al\.|according to|previous studies|prior studies|studies have|researchers have|según|estudios previos)\b|\([^)]*\b(?:19|20)\d{2}\b[^)]*\)', re.I)
 PLACE_CRITERION = re.compile(r'am[eé]rica latina|latin america|latinoam[eé]rica|pa[ií]s|country|geogr[aá]f|regi[oó]n', re.I)
 LOCATION_CUE = re.compile(r'\b(?:in|at|from|en|de|em)\s+(?:(?:a|an|the|una|un|la|el)\s+)?[A-ZÁÉÍÓÚ][\wÀ-ÿ-]+(?:\s+[A-ZÁÉÍÓÚ][\wÀ-ÿ-]+){0,4}\b')
+AI_CRITERION = re.compile(r'inteligencia artificial|\bIA\b|artificial intelligence|\bAI\b|\bNLP\b|\bML\b|\bDL\b', re.I)
+TOOL_USE = re.compile(r'AI[- ]written texts were created using|created using\s+[A-Za-z][\w.]*|\bcopy\.ai\b|chatbot system was designed|AI[- ]powered writing generator|AI piece of software|textos? generados? (?:con|mediante) IA', re.I)
+TECHNIQUE = re.compile(r'\b(?:machine learning|deep learning|natural language processing|aprendizaje automático|aprendizaje profundo|procesamiento del lenguaje natural|NLP)\b', re.I)
 
 
 def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic', limit=6):
@@ -88,16 +91,40 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
         adjusted.append(float(scores[i]) + priority)
     selected = []
     counts = {}
-    for i in np.argsort(-np.asarray(adjusted), kind='stable'):
-        if geography and (not MAIN_STUDY.search(chunks[int(i)]['text']) or not LOCATION_CUE.search(chunks[int(i)]['text'])):
-            continue
-        if method == 'lexical' and scores[int(i)] <= 0:
-            continue
-        chunk = chunks[int(i)]
-        if counts.get(chunk['page'], 0) >= 2: continue
-        selected.append({**chunk, 'similarity': round(float(scores[i]), 4)})
+    compound = geography and any(AI_CRITERION.search(query) for query in queries)
+    ranked = [int(i) for i in np.argsort(-np.asarray(adjusted), kind='stable')]
+    def add(i, facet=None):
+        chunk = chunks[i]
+        if i in used or counts.get(chunk['page'], 0) >= 2:
+            return False
+        if method == 'lexical' and scores[i] <= 0 and not facet:
+            return False
+        selected.append({**chunk, 'similarity': round(float(scores[i]), 4), 'facet': facet or 'related'})
+        used.add(i)
         counts[chunk['page']] = counts.get(chunk['page'], 0) + 1
+        return True
+    used = set()
+    if compound:
+        for i in ranked:
+            text = chunks[i]['text']
+            if MAIN_STUDY.search(text) and LOCATION_CUE.search(text):
+                add(i, 'setting')
+                break
+        tool_candidates = [i for i in ranked if TOOL_USE.search(chunks[i]['text']) and not CITED_WORK.search(chunks[i]['text'])]
+        tool_candidates.sort(key=lambda i: (not bool(re.search(r'\bcopy\.ai\b|AI[- ]written texts were created using', chunks[i]['text'], re.I)), -adjusted[i]))
+        for i in tool_candidates:
+            if add(i, 'ai_tool'): break
+    for i in ranked:
+        text = chunks[i]['text']
+        if geography and (not MAIN_STUDY.search(text) or not LOCATION_CUE.search(text)) and not compound:
+            continue
+        if geography and compound and not (MAIN_STUDY.search(text) and LOCATION_CUE.search(text) or TOOL_USE.search(text)):
+            continue
+        add(i)
         if len(selected) >= min(limit, 3): break
-    return {'passages': selected, 'retrieval': {'method': method, 'model': name,
+    facets = {'setting_found': any(p['facet'] == 'setting' for p in selected),
+              'ai_tool_found': any(p['facet'] == 'ai_tool' for p in selected),
+              'technique_stated_in_passages': any(TECHNIQUE.search(p['text']) and MAIN_STUDY.search(p['text']) for p in selected)} if compound else None
+    return {'passages': selected, 'facets': facets, 'retrieval': {'method': method, 'model': name,
         'model_revision': MODEL_REVISION if method == 'semantic' else None,
         'chunks_indexed': len(chunks), 'selected_count': len(selected), 'cache_hit': hit, 'bibliography_excluded': bibliography}}

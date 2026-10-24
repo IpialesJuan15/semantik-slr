@@ -80,6 +80,19 @@ def render_document_evidence(articles):
                                 f'<p>{escape(item.get("explanation"))}</p>')
             else:
                 sections.append('<p>Sin cita comprobable. Requiere lectura del investigador.</p>')
+            facets = item.get('evidence_facets') or {}
+            if facets:
+                sections.append('<p>Evidencia localizada por partes: '
+                                + ('lugar del estudio; ' if facets.get('setting_found') else 'lugar no localizado; ')
+                                + ('herramienta de IA; ' if facets.get('ai_tool_found') else 'herramienta no localizada; ')
+                                + ('técnica ML/DL/NLP mencionada en los pasajes.' if facets.get('technique_stated_in_passages')
+                                   else 'técnica interna no identificada en los pasajes.') + '</p>')
+                for passage in item.get('selected_passages') or []:
+                    if passage.get('facet') in ('setting', 'ai_tool'):
+                        label = 'Lugar y participantes' if passage['facet'] == 'setting' else 'Herramienta de IA'
+                        sections.append('<p>' + label + ', página ' + escape(passage.get('page')) +
+                                        ' (pasaje localizado, verificar interpretación):</p><blockquote>' +
+                                        escape(passage.get('text')) + '</blockquote>')
             sections.append('</div>')
         sections.append('</section>')
     return ''.join(sections)
