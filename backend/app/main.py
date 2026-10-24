@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from pypdf import PdfReader
 from .analysis import analyze, MODEL
+from .documents import MAX_PDF_BYTES, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
@@ -117,7 +118,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.7.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.8.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -153,6 +154,48 @@ def create_app(database_path=None):
             added += 1
         return added
 
+    def get_candidate(db, article_id):
+        row = db.execute('SELECT * FROM articles WHERE id=?', (article_id,)).fetchone()
+        if row is None: raise HTTPException(404, 'Artículo no encontrado.')
+        base = base_snapshot(db, row['review_id'])
+        if base and is_base_publication(dict(row), base):
+            raise HTTPException(422, 'Esta es la revisión base, no un artículo candidato nuevo.')
+        return row
+
+    def save_document(article_id, content, source_type, source_url='', filename='articulo.pdf'):
+        try: extracted = extract_pdf(content)
+        except ValueError as error: raise HTTPException(422, str(error)) from None
+        with connect(path) as db:
+            article = get_candidate(db, article_id)
+            db.execute('''INSERT INTO article_documents
+                (article_id,source_type,source_url,filename,sha256,page_count,characters,truncated,pages_json,pdf)
+                VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(article_id) DO UPDATE SET
+                source_type=excluded.source_type,source_url=excluded.source_url,filename=excluded.filename,
+                sha256=excluded.sha256,page_count=excluded.page_count,characters=excluded.characters,
+                truncated=excluded.truncated,pages_json=excluded.pages_json,pdf=excluded.pdf,
+                created_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')''',
+                (article_id, source_type, source_url, filename, extracted['sha256'],
+                 extracted['page_count'], extracted['characters'], int(extracted['truncated']),
+                 json.dumps(extracted['pages'], ensure_ascii=False), content))
+            event(db, article['review_id'], 'candidate_pdf_read',
+                  {'article_id': article_id, 'source_type': source_type, 'source_url': source_url,
+                   'sha256': extracted['sha256'], 'pages': extracted['page_count'],
+                   'characters': extracted['characters'], 'truncated': extracted['truncated']})
+        return document_info(article_id)
+
+    def document_info(article_id):
+        with connect(path) as db:
+            get_candidate(db, article_id)
+            row = db.execute('''SELECT source_type,source_url,filename,sha256,page_count,
+                characters,truncated,pages_json FROM article_documents WHERE article_id=?''', (article_id,)).fetchone()
+        if row is None:
+            return {'status': 'missing'}
+        return {'status': 'read', 'source_type': row['source_type'], 'source_url': row['source_url'],
+                'filename': row['filename'], 'sha256': row['sha256'], 'page_count': row['page_count'],
+                'characters': row['characters'], 'truncated': bool(row['truncated']),
+                'page_previews': [{'page': page['page'], 'text': page['text'][:1200]}
+                                  for page in json.loads(row['pages_json']) if page['text'].strip()][:12]}
+
     @app.get('/health')
     def health():
         with connect(path) as db: db.execute('SELECT count(*) FROM reviews').fetchone()
@@ -161,7 +204,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.7.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'mode':'local_single_user', 'version':'0.8.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -280,6 +323,43 @@ def create_app(database_path=None):
             get_review(db,review_id)
             base=base_snapshot(db,review_id)
             return [{**article_json(row),'is_base_publication':bool(base and is_base_publication(dict(row),base))} for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY score DESC,id DESC',(review_id,))]
+
+    @app.get('/api/articles/{article_id}/document')
+    def candidate_document(article_id: int):
+        return document_info(article_id)
+
+    @app.get('/api/articles/{article_id}/document.pdf')
+    def candidate_document_pdf(article_id: int):
+        with connect(path) as db:
+            get_candidate(db, article_id)
+            row = db.execute('SELECT pdf FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
+        if row is None: raise HTTPException(404, 'Este candidato todavía no tiene un PDF guardado.')
+        return Response(content=row['pdf'], media_type='application/pdf', headers={'Content-Disposition': 'inline; filename="articulo.pdf"'})
+
+    @app.post('/api/articles/{article_id}/document/from-openalex')
+    def fetch_candidate_document(article_id: int):
+        with connect(path) as db:
+            article = dict(get_candidate(db, article_id))
+        try:
+            urls = openalex_pdf_urls(article['doi'])
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        last_error = None
+        for url in urls[:5]:
+            try:
+                content, final_url = download_pdf(url)
+                return save_document(article_id, content, 'OpenAlex', final_url)
+            except (ValueError, HTTPException) as error:
+                last_error = error
+        raise HTTPException(422, 'No se pudo leer ninguna de las versiones PDF abiertas registradas. Comprueba la fuente o adjunta el PDF manualmente.') from last_error
+
+    @app.post('/api/articles/{article_id}/document/upload')
+    async def upload_candidate_document(article_id: int, file: UploadFile = File(...)):
+        with connect(path) as db: get_candidate(db, article_id)
+        content = await file.read(MAX_PDF_BYTES + 1)
+        await file.close()
+        if len(content) > MAX_PDF_BYTES: raise HTTPException(413, 'El PDF debe ocupar como máximo 8 MB.')
+        return save_document(article_id, content, 'Investigador', filename=Path(file.filename or 'articulo.pdf').name)
 
     @app.post('/api/reviews/{review_id}/articles',status_code=201)
     def add_article(review_id:int,payload:ArticleInput):

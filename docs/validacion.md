@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.8
+
+- 18 pruebas Python aprobadas y compilación React/Vite correcta. Las pruebas nuevas verifican que el PDF de un candidato se guarda con procedencia, hash y texto por página; que un enlace abierto fallido permite probar otra ubicación; que un archivo inválido no sustituye el anterior; que la decisión humana no cambia; y que se rechazan direcciones locales/privadas.
+- Chromium con base sintética aislada: expediente con PDF leído a 1365 y 390 px, enlace al archivo y vista previa por página, sin errores JavaScript ni desbordamiento horizontal.
+- OpenAlex devolvió ubicaciones PDF reales para DOI `10.3389/fpsyg.2023.1129070`, pero este entorno no pudo descargar ni la ubicación de Frontiers ni la alternativa de PMC por su proxy/red. La descarga de un PDF real debe probarse en el equipo Windows del investigador; la carga manual y lectura se comprobaron con un PDF sintético. No se ha integrado LLM ni OCR.
+
 ## Validación adicional de la entrega 0.7
 
 - Compilación React/Vite y 16 pruebas Python aprobadas. Sin nuevas dependencias ni cambios en los datos del investigador.

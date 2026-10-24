@@ -32,4 +32,8 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 - **Expediente**: título, procedencia, resumen y formulario de decisión tienen una jerarquía clara. Los fragmentos automáticos son un desplegable secundario, etiquetado como parecido textual que requiere cotejo; ningún puntaje se presenta como probabilidad o prueba.
 - **Informes**: antes de crear un reporte con pendientes, un aviso explica que será un borrador y ofrece volver al trabajo de revisión.
 
+## Ajuste de la versión 0.8
+
+- **Documento del candidato**: sección blanca con borde suave entre resumen y evidencia. Muestra estado de lectura, páginas, procedencia y advertencia de cotejo; los fragmentos por página permanecen plegados. Buscar PDF abierto y adjuntar PDF comparten la misma sección. «PDF leído» no implica que el análisis ni el LLM hayan examinado el texto.
+
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.

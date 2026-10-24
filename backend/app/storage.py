@@ -51,6 +51,14 @@ def initialize(path):
           doi TEXT NOT NULL, snapshot TEXT NOT NULL,
           confirmed INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+        CREATE TABLE IF NOT EXISTS article_documents (
+          article_id INTEGER PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+          source_type TEXT NOT NULL, source_url TEXT NOT NULL DEFAULT '',
+          filename TEXT NOT NULL DEFAULT '', sha256 TEXT NOT NULL,
+          page_count INTEGER NOT NULL, characters INTEGER NOT NULL,
+          truncated INTEGER NOT NULL DEFAULT 0, pages_json TEXT NOT NULL,
+          pdf BLOB NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
         ''')
         existing = {row['name'] for row in db.execute('PRAGMA table_info(reviews)')}
         for name, definition in {

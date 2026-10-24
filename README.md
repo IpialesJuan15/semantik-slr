@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.7
+# Semantik SLR · versión 0.8
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -8,12 +8,12 @@ Desde la carpeta del proyecto en CMD o la terminal de VS Code:
 
 ```bat
 git fetch origin
-git switch --track origin/feature/experiencia-investigador
+git switch --track origin/feature/texto-completo-candidatos
 instalar.bat
 iniciar.bat
 ```
 
-Si la rama ya existe localmente, usa `git switch feature/experiencia-investigador` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren.
+Si la rama ya existe localmente, usa `git switch feature/texto-completo-candidatos` y `git pull --ff-only`. Detén el servidor anterior con Ctrl+C antes de cambiar de rama. Si Git informa de cambios locales, consérvalos antes de continuar; no uses comandos que los borren. Si ya ejecutaste la versión 0.7, no necesitas repetir `instalar.bat`: no cambiaron las dependencias.
 
 Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 después de cambiar de versión. La compilación de React está incluida; Node.js solo es necesario para editar la interfaz. La base existente de `.local/reviews.sqlite3` se migra conservando las revisiones.
 
@@ -32,6 +32,8 @@ Los resultados tabulares **todavía no se actualizan automáticamente** al inclu
 
 La versión 0.7 hace visible la última búsqueda y cuántos resultados de la fuente quedaron sin recorrer. La lista de lectura muestra filtros con nombre, usa los años de la última búsqueda sin borrar candidatos y permite ir directamente a decisiones de un protocolo anterior. El expediente pone el resumen, las fuentes y la decisión a la vista; los fragmentos automáticos se abren cuando se necesiten y se describen como pistas, no como pruebas. En Informes se avisa antes de generar un borrador con decisiones pendientes. La biblioteca identifica cada proyecto por número y fecha para distinguir revisiones con el mismo título.
 
+La versión 0.8 añade **Texto completo** al expediente del candidato. **Buscar PDF abierto por DOI** consulta las ubicaciones abiertas de OpenAlex y prueba hasta cinco enlaces PDF; **Adjuntar PDF** permite incorporar uno obtenido por el investigador cuando no se puede descargar. El PDF se guarda localmente, con SHA-256, URL de procedencia cuando existe y texto extraído por página. El expediente muestra vistas previas y permite abrir el PDF guardado. Límite: 8 MB, 80 páginas y 160 000 caracteres extraídos. No hay OCR. Comprueba siempre que el PDF corresponde al candidato. El análisis semántico actual y los reportes aún trabajan con título/resumen y decisiones; **el LLM todavía no lee este PDF**. Esta etapa prepara contenido verificable para ese módulo posterior.
+
 Si una búsqueda antigua guardó la propia revisión base como candidato, el registro y su decisión se conservan como antecedente, pero ya no cuentan como estudio nuevo, no participan en nuevos análisis ni en la tabla CSV de candidatos. Un reporte nuevo conserva ese registro aparte en `legacy_base_records` del JSON. Mientras queden pendientes, el reporte se marca como **Borrador**. Los reportes anteriores siguen siendo instantáneas inmutables y conservan sus cifras históricas.
 
 El estudio base se publicó en **2022**, pero examinó estudios publicados **hasta el 30 de junio de 2021**. Sus 31 estudios originales aparecen como antecedentes; no son nuevos candidatos. La propia revisión de 2022 tampoco es un estudio primario nuevo y ahora se omite en búsquedas/importaciones futuras. Si ya la tenías guardada como candidato, la aplicación la señala para que revises y corrijas su decisión; no borra automáticamente tus datos ni tu historial.
@@ -43,6 +45,7 @@ El filtro de fechas de **Buscar más estudios** se aplica a la siguiente consult
 1. En **Buscar y decidir**, la guía **Siguiente paso** indica qué falta. Si ya hay candidatos, elige **Analizar artículos** en la misma pantalla. Puedes empezar con **TF-IDF**; si activaste el modelo local, usa **Similitud semántica**.
 2. Pulsa **Revisar el siguiente**. La lista de lectura y el detalle aparecen juntos en escritorio. En móvil, al elegir un candidato se abre su detalle más abajo.
 3. Comprueba título, resumen, DOI/enlace y fragmentos contra los criterios de la revisión. El puntaje solo ordena la lectura: no decide por ti. Si el artículo es del primer o último año del intervalo, confirma su fecha exacta en la fuente.
+   En **Texto completo**, pulsa **Buscar PDF abierto por DOI**. Si falla, abre la fuente y usa **Adjuntar PDF** cuando dispongas de una copia autorizada. Verifica título y DOI en el PDF; el estado «PDF leído» solo acredita extracción de texto, no elegibilidad.
 4. Selecciona **Incluido**, **Excluido** o **Pendiente**, escribe el motivo y pulsa **Guardar decisión**. La aplicación abre el siguiente candidato pendiente cuando corresponde.
 5. Cuando termines, abre **Informes** y genera una versión. Para añadir más candidatos, usa **Buscar más estudios** en la misma pantalla. No necesitas crear otra revisión ni volver a cargar el PDF.
 
@@ -67,7 +70,7 @@ Estado de validación de esta entrega: el conector OpenAlex recuperó artículos
 3. Importar un PDF base con texto seleccionable (hasta 8 MB y 80 páginas). La extracción recupera texto; la confirmación de pregunta y criterios sigue siendo manual. Sin OCR.
 4. Buscar en OpenAlex o DOAJ con consulta, fecha inicial y final, y límite de 25, 50 o 100 registros. Los resultados son de acceso abierto según la fuente. La búsqueda limitada no acredita exhaustividad.
 5. Añadir artículos manualmente o importar CSV/JSON. Se omiten duplicados por DOI normalizado o título normalizado.
-6. Ejecutar comparación léxica o semántica. Revisar similitud y fragmentos exactos asociados a los criterios. La comparación trabaja con título y resumen, no con el texto completo de cada artículo.
+6. Ejecutar comparación léxica o semántica. Revisar similitud y fragmentos exactos asociados a los criterios. La comparación trabaja con título y resumen, no con el texto completo de cada artículo. Puedes obtener y leer por separado el PDF del candidato desde su expediente.
 7. Registrar inclusión/exclusión/pendiente con un motivo. No se producen inclusiones automáticas.
 8. Con al menos 3 incluidos y 3 excluidos de la versión actual del protocolo, el siguiente análisis entrena una regresión logística y recomienda etiquetas para pendientes. Las sugerencias no están validadas científicamente.
 9. Con al menos 5 incluidos y 5 excluidos, ejecutar una evaluación exploratoria con separación de entrenamiento/prueba, precisión, recall, F1 y matriz de confusión. No sustituye un gold standard independiente.
@@ -80,6 +83,7 @@ Formato CSV/JSON: `title` obligatorio; opcionales `abstract`, `doi`, `year`, `au
 - OpenAlex: sin clave comparte una cuota diaria con todos los usuarios de tu IP, por lo que puedes recibir HTTP 429 aunque hayas hecho pocas búsquedas. Según su respuesta actual, una clave gratuita da una cuota propia. Puedes obtenerla en https://openalex.org/settings/api. En CMD, antes de `iniciar.bat`, usa `set "OPENALEX_API_KEY=TU_CLAVE"` en **la misma terminal**. No la escribas en archivos del repositorio ni la pegues en el chat. Reinicia el servidor después de configurarla. La aplicación solo muestra si existe una clave, nunca su valor.
 - DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. La consulta restringe los años antes de paginar y comprueba los meses conocidos en ambos extremos. Si DOAJ informa solo el año, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
 - Hugging Face: descarga inicial del modelo fijado; después la inferencia es local.
+- PDFs candidatos: OpenAlex localiza versiones abiertas por DOI. La descarga final depende del sitio de la revista o repositorio y puede fallar por red, redirecciones o ausencia de un PDF legible; entonces se permite adjuntarlo.
 - LLM generativo y Zenodo: todavía no integrados. No se requieren sus cuentas para esta entrega.
 
 ## Desarrollo del frontend
@@ -116,6 +120,7 @@ Para IA: instala `requirements-ai.lock` y ejecuta `python -m backend.download_mo
 - `backend/app/main.py`: API y flujos de trabajo.
 - `backend/app/storage.py`: tablas, migraciones y eventos.
 - `backend/app/sources.py`: OpenAlex, DOAJ y normalización de duplicados.
+- `backend/app/documents.py`: localización de PDF abierto, descarga limitada y extracción por página.
 - `backend/app/analysis.py`: embeddings, similitud, evidencia y clasificador.
 - `backend/app/evaluation.py`: evaluación exploratoria con partición reproducible.
 - `frontend/src/`: pantallas React y estilos.
