@@ -1,0 +1,7 @@
+# Versión 0.12.1: selección prudente de evidencia
+
+La prueba manual con Bashayer mostró que los embeddings priorizaban contexto general y referencias de otros estudios, incluida una conferencia latinoamericana en la bibliografía. Esos pasajes no demuestran el lugar del estudio principal.
+
+La recuperación ahora corta en el encabezado de referencias/bibliografía, prioriza fragmentos que hablan explícitamente del estudio, muestra como máximo tres pasajes y, para criterios geográficos, no ofrece un pasaje sin señales del estudio principal. Si no hay pasajes, la API evita consultar Groq. La interfaz aclara que debe comprobarse el PDF y muestra un estado de evidencia insuficiente.
+
+La puntuación sigue siendo una ayuda de selección y estas reglas pueden omitir evidencia válida o dejar entrar citas incrustadas. No se afirma precisión científica ni cobertura exhaustiva. Validación: 37 pruebas Python aprobadas, incluida una reproducción controlada del fallo con referencias, y compilación React/Vite. Pendiente probar el PDF real de Bashayer y otros formatos en Windows.
