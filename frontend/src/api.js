@@ -6,7 +6,7 @@ export async function api(path, options={}) {
   if(!response.ok){
     const data=await response.json().catch(()=>({}));
     if(Array.isArray(data.detail)) throw new Error(data.detail.map(e=>`${e.loc.at(-1)}: ${e.msg}`).join('; '));
-    throw new Error(typeof data.detail==='string'?data.detail:`La operación falló (${response.status}). Vuelve a intentarlo.`)
+    const error=new Error(typeof data.detail==='string'?data.detail:data.detail?.message||`La operación falló (${response.status}). Vuelve a intentarlo.`);error.status=response.status;error.retryAfter=data.detail?.retry_after_seconds;throw error
   }
   return response.json();
 }

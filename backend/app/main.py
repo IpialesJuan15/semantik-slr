@@ -19,6 +19,7 @@ from pypdf import PdfReader
 from .analysis import analyze, MODEL
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
+from .pdf_retrieval import retrieve_passages
 from .llm_review import GROQ_MODEL, criteria_for, generate_cloud_review, generate_groq_review, generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
@@ -81,6 +82,7 @@ class AnalysisInput(BaseModel):
     engine: Literal['lexical', 'semantic'] = 'lexical'
 
 class LLMReviewInput(BaseModel):
+    retrieval: Literal['semantic', 'lexical', 'legacy'] = 'legacy'
     provider: Literal['local', 'cloud', 'groq'] = 'local'
     criterion_index: int | None = Field(default=None, ge=0, le=11)
 
@@ -123,7 +125,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.11.1', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.12.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -209,7 +211,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.11.1'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.12.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -378,6 +380,22 @@ def create_app(database_path=None):
                 (article_id, review['protocol_version'], document['sha256'])).fetchone()
         return {'status': 'ready', 'created_at': row['created_at'], **json.loads(row['result_json'])} if row else {'status': 'missing'}
 
+    @app.post('/api/articles/{article_id}/document/passages')
+    def preview_passages(article_id: int, payload: LLMReviewInput):
+        with connect(path) as db:
+            article = get_candidate(db, article_id)
+            review = get_review(db, article['review_id'])
+            document = db.execute('SELECT * FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
+        if not document or document['truncated']:
+            raise HTTPException(422, 'Adjunta un PDF con extracción completa.')
+        try:
+            criteria = criteria_for(review)
+            if payload.criterion_index is None or payload.criterion_index >= len(criteria):
+                raise ValueError('Selecciona un criterio válido.')
+            return retrieve_passages(json.loads(document['pages_json']), [criteria[payload.criterion_index]], document['sha256'], path, payload.retrieval)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+
     @app.post('/api/articles/{article_id}/document/llm-review')
     def create_document_review(article_id: int, payload: LLMReviewInput = LLMReviewInput()):
         with connect(path) as db:
@@ -389,12 +407,27 @@ def create_app(database_path=None):
             raise HTTPException(422, 'La extracción del PDF quedó incompleta. Revisa el archivo antes de usar el LLM.')
         try:
             pages = json.loads(document['pages_json'])
+            context = None
+            if payload.retrieval != 'legacy':
+                chosen = criteria_for(review)
+                if payload.provider == 'groq':
+                    if payload.criterion_index is None or payload.criterion_index >= len(chosen):
+                        raise ValueError('Selecciona un criterio válido.')
+                    chosen = [chosen[payload.criterion_index]]
+                context = retrieve_passages(pages, chosen, document['sha256'], path, payload.retrieval)
+            options = {'context': context} if context else {}
             if payload.provider == 'groq':
-                result = generate_groq_review(review, article, pages, document['sha256'], payload.criterion_index)
+                result = generate_groq_review(review, article, pages, document['sha256'], payload.criterion_index, **options)
             else:
                 generator = generate_cloud_review if payload.provider == 'cloud' else generate_local_review
-                result = generator(review, article, pages, document['sha256'])
+                result = generator(review, article, pages, document['sha256'], **options)
+            if context:
+                result['retrieval'] = context['retrieval']
+                for item in result['criteria']:
+                    item.update(retrieval=context['retrieval'], selected_passages=context['passages'], generated_at=datetime.now(timezone.utc).isoformat())
         except ValueError as error:
+            if hasattr(error, 'retry_after_seconds'):
+                raise HTTPException(429, {'message': str(error), 'retry_after_seconds': error.retry_after_seconds}) from None
             raise HTTPException(422, str(error)) from None
         with connect(path) as db:
             get_candidate(db, article_id)
@@ -576,6 +609,7 @@ def create_app(database_path=None):
 
     @app.post('/api/reviews/{review_id}/reports',status_code=201)
     def create_report(review_id:int):
+        from .report_evidence import snapshot_document_evidence
         with connect(path) as db:
             review=get_review(db,review_id)
             published_row=db.execute('SELECT snapshot,confirmed FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
@@ -586,10 +620,12 @@ def create_app(database_path=None):
             legacy_base_records=[article for article in all_articles if base and is_base_publication(article,base)]
             articles=[article for article in all_articles if article not in legacy_base_records]
             if not articles: raise HTTPException(422,'Añade artículos antes de generar el reporte.')
+            for article in articles:
+                article['document_evidence'] = snapshot_document_evidence(db, article['id'], review['protocol_version'])
             history=[{**dict(row),'payload':json.loads(row['payload'])} for row in db.execute('SELECT * FROM events WHERE review_id=? ORDER BY id',(review_id,))]
             review.pop('base_text',None)
             published_base={**json.loads(published_row['snapshot']),'confirmed':bool(published_row['confirmed'])} if published_row else None
-            snapshot={'schema_version':3,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'legacy_base_records':legacy_base_records,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.']}
+            snapshot={'schema_version':4,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'legacy_base_records':legacy_base_records,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.','Las propuestas del PDF son sugerencias de IA separadas de las decisiones humanas; una cita presente no valida su interpretación.','Esta versión conserva procedencia, pasajes y propuestas; no incluye los archivos PDF originales.']}
             snapshot['decisions_needing_recheck']=[a['id'] for a in articles if a['decision']!='pending' and a['decision_version']!=review['protocol_version']]
             snapshot['status']='draft' if snapshot['counts']['pending'] or snapshot['decisions_needing_recheck'] else 'screened'
             serialized=json.dumps(snapshot,ensure_ascii=False,sort_keys=True)
@@ -621,6 +657,7 @@ def create_app(database_path=None):
 
     @app.get('/api/reports/{report_id}.html')
     def readable_report(report_id:int):
+        from .report_evidence import render_document_evidence
         with connect(path) as db: row=db.execute('SELECT * FROM reports WHERE id=?',(report_id,)).fetchone()
         if row is None: raise HTTPException(404,'Reporte no encontrado.')
         data=json.loads(row['snapshot']); review=data['review']
@@ -633,13 +670,14 @@ def create_app(database_path=None):
             categories=''.join('<li>'+escape(item['name'])+': '+escape(item['count'])+'</li>' for item in base['application_counts'])
             base_section=f'''<h2>Estudio original publicado</h2><p>DOI: {escape(base['doi'])}. Estudios incluidos en la publicación: {escape(base['original_count'])}. Método confirmado en esta aplicación: {"sí" if base['confirmed'] else "no"}.</p><p>Las categorías originales de la tabla 2 son:</p><ul>{categories}</ul><p>Los estudios originales están separados de los candidatos nuevos. {len(data.get('legacy_base_records',[]))} registro(s) histórico(s) de la propia revisión base se conservan en el JSON y se excluyen del recuento de candidatos. Las búsquedas en DOAJ y OpenAlex no reproducen la estrategia de las cuatro bases originales.</p>'''
         document=f'''<!doctype html><html lang="es"><meta charset="utf-8"><title>Reporte v{row['version']}</title>
-        <style>body{{font:15px/1.65 Arial,sans-serif;color:#34313d;background:white;margin:40px;max-width:1100px}}h1,h2{{color:#5f4778}}table{{width:100%;border-collapse:collapse;font-size:12px}}td,th{{padding:9px;border:1px solid #e4e2eb;text-align:left;overflow-wrap:anywhere}}th{{background:#f5f2f8}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{overflow-wrap:anywhere}}@media print{{body{{margin:15px}}tr{{break-inside:avoid}}}}</style>
+        <style>body{{font:15px/1.65 Arial,sans-serif;color:#34313d;background:white;margin:40px;max-width:1100px}}h1,h2{{color:#5f4778}}table{{width:100%;border-collapse:collapse;font-size:12px}}td,th{{padding:9px;border:1px solid #e4e2eb;text-align:left;overflow-wrap:anywhere}}th{{background:#f5f2f8}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{overflow-wrap:anywhere}}.pdf-evidence{{margin:32px 0;overflow-wrap:anywhere}}.criterion-evidence{{border-top:1px solid #e4e2eb;padding:12px 0}}blockquote{{font-family:Georgia,serif;border-left:3px solid #7251a2;padding-left:16px;margin-left:0;max-width:75ch}}@media print{{body{{margin:15px}}tr,.criterion-evidence{{break-inside:avoid}}}}@media(max-width:600px){{body{{margin:16px}}}}</style>
         <h1>{escape(review['title'])}</h1><p>Reporte de actualización v{row['version']} · {escape(data['created_at'])}</p><p><strong>{'Borrador de cribado: quedan artículos pendientes o decisiones por revisar.' if data.get('status')=='draft' else 'Cribado registrado: verifica la cobertura antes de usar este reporte como síntesis final.'}</strong></p>
         {base_section}<h2>Protocolo v{review['protocol_version']}</h2><p>{escape(review['question'])}</p>
         <p>Revisión base: {escape(review['base_reference'])}</p><h3>Inclusión</h3><pre>{escape(review['inclusion'])}</pre><h3>Exclusión</h3><pre>{escape(review['exclusion'])}</pre>
         <h2>Registro de evidencia</h2><p>Incluidos: {data['counts']['included']} · Excluidos: {data['counts']['excluded']} · Pendientes: {data['counts']['pending']}</p>
         <p>Decisiones que necesitan revisión por cambio de protocolo: {len(data.get('decisions_needing_recheck',[]))}</p>
         <table><thead><tr><th>Título</th><th>Año</th><th>DOI</th><th>Fuente</th><th>Decisión</th><th>Motivo</th></tr></thead><tbody>{rows}</tbody></table>
+        {render_document_evidence(data['articles'])}
         <h2>Alcance y limitaciones</h2><ul>{''.join('<li>'+escape(v)+'</li>' for v in data['limitations'])}</ul>
         <h2>Trazabilidad</h2><small>SHA-256 del reporte JSON: {escape(row['sha256'])}</small><pre>{escape(json.dumps(data['history'],ensure_ascii=False,indent=2))}</pre></html>'''
         return Response(document,media_type='text/html',headers={'Content-Disposition':f'attachment; filename="semantik-reporte-v{row["version"]}.html"'})

@@ -1,0 +1,41 @@
+/* Researcher's reading sequence: local evidence, explanation, then human decision. */
+.pdf-assistant{--pdf-paper:#fff;--pdf-inset:#faf8fc;--pdf-ink:#34313d;--pdf-muted:#746a7e;--pdf-rule:#e4e2eb;--pdf-annotation:#7251a2;--pdf-caution:#956317;border-top:1px solid var(--pdf-rule);margin-top:20px;padding-top:20px;color:var(--pdf-ink);min-width:0}
+.pdf-assistant h5{font-size:18px;line-height:1.35;letter-spacing:-.2px;margin:0 0 8px;font-weight:650}
+.pdf-assistant h6{font-size:14px;font-weight:650;line-height:1.4;margin:0 0 16px;display:flex;align-items:center;gap:8px}
+.pdf-assistant h6>span{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid var(--pdf-rule);border-radius:50%;color:var(--pdf-annotation);font-size:12px;flex-shrink:0}
+.pdf-assistant>p{font-size:13px;max-width:70ch}
+.pdf-reading-step{padding:20px 0;border-bottom:1px solid var(--pdf-rule)}
+.pdf-assistant .field{margin:12px 0;min-width:0}
+.pdf-assistant .field select{width:100%;max-width:100%;min-width:0;background:var(--pdf-inset);min-height:44px;text-overflow:ellipsis}
+.pdf-assistant .field>span{color:var(--pdf-ink);font-size:12px;font-weight:600}
+.pdf-assistant .pdf-help{font-size:12px;line-height:1.6;color:var(--pdf-muted);margin:8px 0 12px;max-width:70ch}
+.pdf-assistant .pdf-selected-criterion{margin:0 0 16px;padding:12px 14px;border-left:3px solid var(--pdf-annotation);background:var(--pdf-inset);font-size:13px;line-height:1.6;color:var(--pdf-ink);overflow-wrap:anywhere}
+.pdf-selected-criterion strong{display:block;color:var(--pdf-annotation);font-size:11px;margin-bottom:4px}
+.pdf-assistant button{min-height:40px;max-width:100%;white-space:normal;text-align:center}
+.pdf-assistant button:disabled{cursor:not-allowed}
+.pdf-assistant .pdf-error{background:#faf1f1;color:#8c3f40;border-left:3px solid #ba7c7d;padding:12px;margin:12px 0;font-size:12px;overflow-wrap:anywhere}
+.pdf-error p{color:inherit;font-size:inherit;margin-bottom:8px}
+.pdf-passages{margin-top:20px}
+.pdf-preview-summary strong,.pdf-preview-summary span{display:block}
+.pdf-preview-summary strong{font-size:13px;color:var(--pdf-ink)}
+.pdf-preview-summary span{font-size:11px;color:var(--pdf-muted);margin-top:4px}
+.pdf-passage{border-bottom:1px solid var(--pdf-rule);padding:12px 0}
+.pdf-passage summary,.pdf-provenance summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--pdf-annotation);min-height:24px;line-height:1.5}
+.pdf-assistant blockquote{font:14px/1.7 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0;padding:0 0 0 12px;border-left:2px solid #cbb9dd;color:var(--pdf-ink)}
+.pdf-assistant a{font-size:12px;display:inline-block;min-height:28px}
+.pdf-proposals{padding-top:24px}
+.pdf-proposals-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.pdf-proposals-heading h6{margin:0;font-size:15px}
+.pdf-proposals-heading>span{font-size:11px;color:var(--pdf-muted);font-variant-numeric:tabular-nums}
+.pdf-proposal{border-top:1px solid var(--pdf-rule);padding:16px 0}
+.pdf-proposal summary{font-size:12px;font-weight:600;cursor:pointer;line-height:1.6;overflow-wrap:anywhere;color:var(--pdf-ink)}
+.pdf-proposal summary>span{display:inline}
+.pdf-verdict{display:block;margin-top:6px;font-size:11px;color:var(--pdf-annotation);font-weight:600}
+.pdf-verdict.uncertain{color:var(--pdf-caution)}
+.pdf-proposal>p{font-size:12px;margin:12px 0 0;line-height:1.6}
+.pdf-proposal .pdf-explanation{color:var(--pdf-ink);margin:8px 0}
+.pdf-proposal small{font-size:11px;color:var(--pdf-muted)}
+.pdf-provenance{margin-top:20px;border-top:1px solid var(--pdf-rule);padding-top:16px;overflow-wrap:anywhere}
+.pdf-provenance p{font-size:11px;margin:10px 0;color:var(--pdf-muted)}
+.pdf-assistant summary:focus-visible{outline:3px solid #b8a4d5;outline-offset:3px;border-radius:3px}
+@media(max-width:600px){.pdf-assistant button{width:100%;min-height:44px}.pdf-assistant h5{font-size:17px}.pdf-assistant blockquote{font-size:13px;padding-left:10px}.pdf-assistant .pdf-selected-criterion{padding:10px 12px}.pdf-proposal summary{font-size:12px}.pdf-assistant a{min-height:40px;display:inline-flex;align-items:center}.pdf-provenance summary,.pdf-passage summary{min-height:32px}}
