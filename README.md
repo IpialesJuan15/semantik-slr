@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.10.1
+# Semantik SLR · versión 0.11
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -39,6 +39,8 @@ La versión 0.9 añade un **asistente experimental con LLM local** que examina p
 La versión 0.10 permite elegir en el expediente entre **OpenAI en la nube (`gpt-4.1-mini`)** y **Ollama local (`qwen2.5:3b`)**. Ambos comparten la selección de pasajes y la verificación de citas. Al elegir nube y pulsar generar se envían título, DOI, criterios y hasta doce pasajes con su número de página a OpenAI; **no se envía el PDF completo**. La respuesta guarda proveedor, modelo y uso de tokens cuando la API lo informa. La clave se lee solo de `SEMANTIK_OPENAI_API_KEY` al arrancar el servidor; no se escribe en la base, reportes, historial ni interfaz. La API puede tener costo por uso y requiere una cuenta de API con acceso al modelo, distinta de una suscripción de ChatGPT. Esta integración se verificó con respuestas simuladas, no con una clave real en este entorno.
 
 La versión 0.10.1 distingue, cuando la API informa la causa, un **429 por cuota o presupuesto insuficiente** de un **límite temporal de solicitudes**. No muestra el mensaje completo del proveedor para evitar incluir datos sensibles. Ante falta de cuota, comprueba Facturación y Límites de tu cuenta de API; esperar por sí solo no añade saldo.
+
+La versión 0.11 añade **GroqCloud con `qwen/qwen3.8-27b`**, el modelo que el investigador probó en su Playground. Para respetar el límite gratuito observado de 1 000 tokens de salida por minuto, analiza **un criterio elegido por solicitud** y pide como máximo **300 tokens** de salida. Las propuestas de los criterios se acumulan para el mismo PDF y protocolo, pero cada nueva petición puede recibir HTTP 429 si se hace demasiado rápido. Groq recibe título, DOI, criterio y pasajes seleccionados, no el PDF completo. Se verifica cada cita contra la página del PDF y la decisión humana no cambia. El Playground generó una respuesta coherente para Bashayer, pero esta integración todavía necesita una prueba real en la aplicación.
 
 Si una búsqueda antigua guardó la propia revisión base como candidato, el registro y su decisión se conservan como antecedente, pero ya no cuentan como estudio nuevo, no participan en nuevos análisis ni en la tabla CSV de candidatos. Un reporte nuevo conserva ese registro aparte en `legacy_base_records` del JSON. Mientras queden pendientes, el reporte se marca como **Borrador**. Los reportes anteriores siguen siendo instantáneas inmutables y conservan sus cifras históricas.
 
@@ -93,6 +95,17 @@ iniciar.bat
 
 Abre un candidato con PDF leído, elige **OpenAI en la nube** y pulsa **Generar con OpenAI**. Solo la pulsación de ese botón envía pasajes a OpenAI. El servidor no muestra el valor de la clave, únicamente si está configurada. Al cerrar esa ventana de CMD, la variable deja de estar disponible para nuevas sesiones. Si prefieres no usar una API, elige Ollama local. No hay un precio fijo por artículo: depende de los tokens y de la tarifa vigente del proveedor; la app muestra los tokens informados por la respuesta.
 
+## Probar GroqCloud con el plan gratuito
+
+Obtén tu clave en la consola de Groq. **No la pegues en el chat ni la guardes en el repositorio.** Detén la aplicación con Ctrl+C y, en CMD, ejecuta en la misma ventana:
+
+```bat
+set "SEMANTIK_GROQ_API_KEY=TU_CLAVE_REAL"
+iniciar.bat
+```
+
+En un candidato con PDF leído, elige **Groq · qwen/qwen3.8-27b**, selecciona el criterio de América Latina y pulsa **Analizar este criterio con Groq**. Revisa la cita y la página antes de usar la propuesta. Para otro criterio, selecciónalo y vuelve a pulsar el botón; si Groq informa límite 429, espera al menos un minuto. Los límites gratuitos pertenecen a tu organización Groq y pueden cambiar; la aplicación no promete análisis ilimitado ni exige subir a un plan de pago. No uses tu clave Groq en `SEMANTIK_OPENAI_API_KEY`: son servicios distintos.
+
 ## Qué puedes probar
 
 1. Crear la revisión desde el estudio publicado preparado y confirmar su método, o abrir las revisiones manuales anteriores.
@@ -114,7 +127,7 @@ Formato CSV/JSON: `title` obligatorio; opcionales `abstract`, `doi`, `year`, `au
 - DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. La consulta restringe los años antes de paginar y comprueba los meses conocidos en ambos extremos. Si DOAJ informa solo el año, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
 - Hugging Face: descarga inicial del modelo fijado; después la inferencia es local.
 - PDFs candidatos: OpenAlex localiza versiones abiertas por DOI. La descarga final depende del sitio de la revista o repositorio y puede fallar por red, redirecciones o ausencia de un PDF legible; entonces se permite adjuntarlo.
-- LLM generativo: OpenAI opcional con clave de API y posible costo; Ollama/qwen2.5:3b opcional, sin cuenta ni clave. Zenodo todavía no está integrado.
+- LLM generativo: GroqCloud opcional con límite gratuito de la cuenta, OpenAI opcional con posible costo, y Ollama/qwen2.5:3b local. Zenodo todavía no está integrado.
 
 ## Desarrollo del frontend
 

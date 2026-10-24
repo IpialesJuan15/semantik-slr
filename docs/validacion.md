@@ -1,5 +1,11 @@
 # Validación
 
+## Validación adicional de la entrega 0.11
+
+- El investigador probó manualmente `qwen/qwen3.8-27b` en Groq Playground: con `max_completion_tokens=300` devolvió JSON que señalaba correctamente que el estudio Bashayer en Arabia Saudita no cumple el criterio de América Latina y citaba el pasaje aportado de la página 8. El primer intento con una reserva de 1 509 tokens recibió HTTP 429 porque su organización tiene límite de 1 000 tokens de salida por minuto. Esta prueba de un pasaje no valida el comportamiento con selección automática del PDF.
+- 28 pruebas Python aprobadas y compilación React/Vite correcta. Las pruebas nuevas verifican el identificador exacto de Groq, el tope de 300 tokens, la selección de un criterio, la verificación de cita y la acumulación de propuestas sin cambiar la decisión humana. La API de Groq se simuló; no se usó ninguna clave real.
+- Chromium con base sintética aislada a 1365 y 390 px: selector de Groq, criterio, progreso y estado «Aún no analizado», aviso de clave ausente; sin errores JavaScript ni desbordamiento. Falta probar la llamada real a Groq desde Windows y evaluar resultados en varios artículos.
+
 ## Validación adicional de la entrega 0.10.1
 
 - Tras la primera prueba real en Windows, OpenAI respondió HTTP 429. El aviso original no distinguía cuota insuficiente de límite temporal; no se guardó ninguna propuesta. La causa exacta de la cuenta del investigador aún debe comprobarse en Facturación/Uso/Límites.

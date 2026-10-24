@@ -44,4 +44,8 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 
 - **Proveedor del LLM**: un selector etiquetado dentro del asistente ofrece nube o equipo. La explicación inmediatamente debajo declara qué pasajes se envían, el posible costo y el requisito de clave. La propuesta conserva el nombre del proveedor, sin mezclarla con la decisión humana.
 
+## Ajuste de la versión 0.11
+
+- **Groq por criterio**: al elegir Groq aparece un segundo selector de criterio. La explicación del plan gratuito queda junto a la acción. El expediente muestra progreso de criterios consultados y distingue los todavía no analizados de respuestas inciertas.
+
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.

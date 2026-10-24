@@ -1,11 +1,12 @@
 import React, {useEffect,useState} from 'react'
 import {api} from './api.js'
 
-export function CandidateDocument({articleId,onSaved}){
+export function CandidateDocument({articleId,onSaved,review}){
  const [document,setDocument]=useState(null),[working,setWorking]=useState(false),[error,setError]=useState('')
  const [suggestion,setSuggestion]=useState(null),[thinking,setThinking]=useState(false),[llmError,setLlmError]=useState('')
- const [provider,setProvider]=useState('cloud'),[cloudReady,setCloudReady]=useState(null)
- useEffect(()=>{let active=true;setDocument(null);setSuggestion(null);setError('');setLlmError('');Promise.all([api(`/articles/${articleId}/document`),api(`/articles/${articleId}/document/llm-review`)]).then(([value,review])=>{if(active){setDocument(value);setSuggestion(review);if(review.status==='ready')setProvider(review.provider||'local')}}).catch(reason=>{if(active)setError(reason.message)});api('/status').then(value=>{if(active)setCloudReady(value.cloud_llm_configured)}).catch(()=>{});return()=>{active=false}},[articleId])
+ const [provider,setProvider]=useState('groq'),[cloudReady,setCloudReady]=useState(null),[groqReady,setGroqReady]=useState(null),[criterionIndex,setCriterionIndex]=useState(0)
+ const criteria=[['inclusion',review.inclusion],['exclusion',review.exclusion]].flatMap(([kind,value])=>String(value||'').split('\n').map(line=>line.replace(/^[\s\-•]+/,'').trim()).filter(Boolean).map(text=>({kind,text})))
+ useEffect(()=>{let active=true;setDocument(null);setSuggestion(null);setError('');setLlmError('');Promise.all([api(`/articles/${articleId}/document`),api(`/articles/${articleId}/document/llm-review`)]).then(([value,saved])=>{if(active){setDocument(value);setSuggestion(saved);if(saved.status==='ready')setProvider(saved.provider||'local')}}).catch(reason=>{if(active)setError(reason.message)});api('/status').then(value=>{if(active){setCloudReady(value.cloud_llm_configured);setGroqReady(value.groq_key_configured)}}).catch(()=>{});return()=>{active=false}},[articleId])
  async function run(request){
   setWorking(true);setError('')
   try{const result=await request();setDocument(result);setSuggestion({status:'missing'});await onSaved?.()}
@@ -14,7 +15,7 @@ export function CandidateDocument({articleId,onSaved}){
  }
  async function reviewPdf(){
   setThinking(true);setLlmError('')
-  try{setSuggestion(await api(`/articles/${articleId}/document/llm-review`,{method:'POST',body:{provider}}));await onSaved?.()}
+  try{const result=await api(`/articles/${articleId}/document/llm-review`,{method:'POST',body:provider==='groq'?{provider,criterion_index:criterionIndex}:{provider}});setSuggestion(result);if(provider==='groq'){const next=result.criteria.findIndex(item=>!item.analyzed);if(next>=0)setCriterionIndex(next)}await onSaved?.()}
   catch(reason){setLlmError(reason.message)}
   finally{setThinking(false)}
  }
@@ -35,7 +36,41 @@ export function CandidateDocument({articleId,onSaved}){
    <p className="document-warning">Comprueba que el título y el DOI del PDF correspondan a este artículo. El modelo semántico actual solo analiza título y resumen; el asistente de abajo examina pasajes del PDF por separado.</p>
    <div className="button-row"><a className="button" href={`/api/articles/${articleId}/document.pdf`} target="_blank" rel="noreferrer">Abrir PDF guardado</a>{document.source_url&&<a href={document.source_url} target="_blank" rel="noreferrer">Ver origen del PDF</a>}</div>
    <details className="document-pages"><summary>Ver fragmentos extraídos por página</summary>{document.page_previews.map(page=><div key={page.page}><strong>Página {page.page}</strong><p>{page.text}</p></div>)}{document.page_count>document.page_previews.length&&<p>Se muestra una vista previa; el texto completo de las páginas leídas queda guardado para el análisis posterior.</p>}</details>
-   <div className="local-review"><h5>Asistente de lectura del PDF</h5><p>El LLM propone una explicación por criterio a partir de pasajes seleccionados de todas las páginas. Solo mostramos citas que podemos encontrar en el PDF; tú debes comprobar si su interpretación es correcta.</p><label className="field llm-provider"><span>Dónde procesar los pasajes</span><select value={provider} disabled={thinking} onChange={event=>setProvider(event.target.value)}><option value="cloud">OpenAI en la nube · gpt-4.1-mini</option><option value="local">Ollama en mi equipo · qwen2.5:3b</option></select></label>{provider==='cloud'?<p className="llm-provider-note">Se enviarán título, DOI, criterios y hasta 12 pasajes con sus páginas a OpenAI; el PDF completo no se envía. La API puede generar costos.{cloudReady===false?' Falta configurar SEMANTIK_OPENAI_API_KEY en el servidor.':''}</p>:<p className="llm-provider-note">Ollama procesa los pasajes en tu equipo. Debes instalar qwen2.5:3b; en 8 GB puede tardar varios minutos.</p>}<button type="button" disabled={thinking||working||document.truncated} onClick={reviewPdf}>{thinking?'Leyendo pasajes del PDF…':suggestion?.status==='ready'&&(suggestion.provider||'local')===provider?'Volver a generar propuestas':provider==='cloud'?'Generar con OpenAI':'Generar con Ollama'}</button>{thinking&&<p role="status">Mantén abierta esta página mientras termina la propuesta.</p>}{llmError&&<p className="error" role="alert">{llmError}</p>}{suggestion?.status==='ready'&&<div className="local-review-results"><p><strong>{suggestion.model}</strong> · {suggestion.provider==='cloud'?'Nube':'Local'} · {suggestion.passages_examined} pasajes seleccionados · Protocolo v{suggestion.protocol_version}</p>{suggestion.usage?.total_tokens&&<p>Consumo registrado por la API: {suggestion.usage.total_tokens.toLocaleString('es-EC')} tokens.</p>}<p>«Apoya» sugiere que se cumple ese criterio; «contradice» sugiere que no. Ninguno equivale a una decisión automática.</p><p className="document-warning">{suggestion.warning}</p>{suggestion.criteria.map((item,index)=><div className="local-criterion" key={index}><strong>{item.kind==='inclusion'?'Inclusión':'Exclusión'}: {item.criterion}</strong><p>Propuesta: <b>{item.assessment}</b></p>{item.quote_verified?<><blockquote>{item.quote}</blockquote><small>Texto localizado en la página {item.page}. Comprueba su sentido en el PDF.</small><p>{item.explanation}</p></>:<p>Sin cita comprobable para este criterio. Revisa el PDF manualmente.</p>}</div>)}</div>}</div>
+   <div className="local-review">
+    <h5>Asistente de lectura del PDF</h5>
+    <p>El LLM propone una explicación por criterio a partir de pasajes seleccionados de todas las páginas. Comprueba cada cita y su interpretación antes de decidir.</p>
+    <label className="field llm-provider"><span>Dónde procesar los pasajes</span>
+     <select value={provider} disabled={thinking} onChange={event=>setProvider(event.target.value)}>
+      <option value="groq">Groq · qwen/qwen3.8-27b</option>
+      <option value="cloud">OpenAI en la nube · gpt-4.1-mini</option>
+      <option value="local">Ollama en mi equipo · qwen2.5:3b</option>
+     </select>
+    </label>
+    {provider==='groq'?<>
+     <p className="llm-provider-note">Groq recibe título, DOI, el criterio elegido y pasajes con sus páginas. El PDF completo no se envía. El plan gratuito tiene límites: analizaremos un criterio por solicitud.{groqReady===false?' Falta configurar SEMANTIK_GROQ_API_KEY en el servidor.':''}</p>
+     <label className="field llm-provider"><span>Criterio a revisar</span>
+      <select value={criterionIndex} disabled={thinking} onChange={event=>setCriterionIndex(Number(event.target.value))}>
+       {criteria.map((item,index)=><option key={index} value={index}>{(item.kind==='inclusion'?'Inclusión ':'Exclusión ')+(index+1)+': '+item.text}</option>)}
+      </select>
+     </label>
+    </>:provider==='cloud'?<p className="llm-provider-note">Se enviarán título, DOI, criterios y hasta 12 pasajes con sus páginas a OpenAI; el PDF completo no se envía. La API puede generar costos.{cloudReady===false?' Falta configurar SEMANTIK_OPENAI_API_KEY en el servidor.':''}</p>:<p className="llm-provider-note">Ollama procesa los pasajes en tu equipo. Debes instalar qwen2.5:3b; en 8 GB puede tardar varios minutos.</p>}
+    <button type="button" disabled={thinking||working||document.truncated||(provider==='groq'&&!criteria.length)} onClick={reviewPdf}>
+     {thinking?'Leyendo pasajes del PDF…':provider==='groq'?'Analizar este criterio con Groq':suggestion?.status==='ready'&&(suggestion.provider||'local')===provider?'Volver a generar propuestas':provider==='cloud'?'Generar con OpenAI':'Generar con Ollama'}
+    </button>
+    {thinking&&<p role="status">Mantén abierta esta página mientras termina la propuesta.</p>}
+    {llmError&&<p className="error" role="alert">{llmError}</p>}
+    {suggestion?.status==='ready'&&<div className="local-review-results">
+     <p><strong>{suggestion.model}</strong> · {suggestion.provider==='groq'?'Groq':suggestion.provider==='cloud'?'Nube':'Local'} · {suggestion.passages_examined} pasajes consultados · Protocolo v{suggestion.protocol_version}</p>
+     {suggestion.provider==='groq'&&<p>{suggestion.completed_criteria||1} de {suggestion.criteria.length} criterios consultados con Groq. Para otro criterio, selecciónalo arriba y vuelve a pulsar el botón.</p>}
+     {suggestion.usage?.total_tokens>0&&<p>Consumo informado por la API: {suggestion.usage.total_tokens.toLocaleString('es-EC')} tokens.</p>}
+     <p>«Apoya» sugiere que se cumple ese criterio; «contradice» sugiere que no. Ninguno equivale a una decisión automática.</p>
+     <p className="document-warning">{suggestion.warning}</p>
+     {suggestion.criteria.map((item,index)=><div className="local-criterion" key={index}>
+      <strong>{item.kind==='inclusion'?'Inclusión':'Exclusión'}: {item.criterion}</strong>
+      {item.analyzed===false?<p>Aún no se analizó este criterio con Groq.</p>:<><p>Propuesta: <b>{item.assessment}</b></p>{item.quote_verified?<><blockquote>{item.quote}</blockquote><small>Texto localizado en la página {item.page}. Comprueba su sentido en el PDF.</small><p>{item.explanation}</p></>:<p>Sin cita comprobable para este criterio. Revisa el PDF manualmente.</p>}</>}
+     </div>)}
+    </div>}
+   </div>
   </>}
   <div className="button-row document-actions"><button type="button" disabled={working||!document} onClick={()=>run(()=>api(`/articles/${articleId}/document/from-openalex`,{method:'POST'}))}>{working?'Procesando…':document?.status==='read'?'Buscar otra versión abierta':'Buscar PDF abierto por DOI'}</button><label className="file-button">{working?'Procesando…':'Adjuntar PDF'}<input type="file" accept=".pdf,application/pdf" disabled={working} onChange={upload}/></label></div>
   <p className="fine-print">Máximo 8 MB y 80 páginas, con texto seleccionable. La búsqueda automática puede fallar aunque el artículo sea de acceso abierto; en ese caso, comprueba la fuente y adjunta el PDF.</p>

@@ -12,6 +12,8 @@ OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
 CLOUD_MODEL = 'gpt-4.1-mini'
 CLOUD_URL = 'https://api.openai.com/v1/chat/completions'
+GROQ_MODEL = 'qwen/qwen3.8-27b'
+GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 MAX_CRITERIA = 12
 
 
@@ -188,3 +190,49 @@ def generate_cloud_review(review, article, pages, pdf_hash):
                   if isinstance(usage.get(field), int) and usage[field] >= 0}
     return checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
                           'cloud', CLOUD_MODEL, safe_usage)
+
+
+def generate_groq_review(review, article, pages, pdf_hash, criterion_index):
+    """Generate one criterion at a time to stay below the free OTPM cap."""
+    key = os.getenv('SEMANTIK_GROQ_API_KEY', '').strip()
+    if not key:
+        raise ValueError('Falta SEMANTIK_GROQ_API_KEY. Configura tu clave de Groq en la terminal que inicia la aplicación; no la pegues en el chat.')
+    all_criteria = criteria_for(review)
+    if criterion_index is None or not 0 <= criterion_index < len(all_criteria):
+        raise ValueError('Elige un criterio válido antes de consultar Groq.')
+    chosen = all_criteria[criterion_index]
+    single_review = {**review,
+                     'inclusion': chosen['text'] if chosen['kind'] == 'inclusion' else '',
+                     'exclusion': chosen['text'] if chosen['kind'] == 'exclusion' else ''}
+    criteria, passages, instructions, prompt = request_context(single_review, article, pages)
+    instructions += ' Responde solo al criterio indicado. Cita un fragmento exacto de hasta 150 caracteres y explica en hasta 25 palabras. Mantén el JSON breve.'
+    try:
+        with httpx.Client(timeout=httpx.Timeout(90, connect=10)) as client:
+            response = client.post(GROQ_URL,
+                headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+                json={'model': GROQ_MODEL, 'messages': [
+                    {'role': 'system', 'content': instructions},
+                    {'role': 'user', 'content': prompt}],
+                    'temperature': 0, 'max_completion_tokens': 300, 'stream': False})
+    except httpx.TimeoutException:
+        raise ValueError('Groq tardó demasiado. Vuelve a intentar con este criterio más tarde.') from None
+    except httpx.HTTPError:
+        raise ValueError('No se pudo conectar con Groq. Comprueba Internet y vuelve a intentar.') from None
+    if response.status_code in (401, 403):
+        raise ValueError('Groq rechazó la clave o el acceso al modelo. Revisa tu proyecto y la clave configurada.')
+    if response.status_code == 429:
+        raise ValueError('Groq alcanzó el límite gratuito de tokens o solicitudes. Espera al menos un minuto antes de analizar otro criterio; no necesitas cambiar de plan para esta prueba.')
+    if response.status_code != 200:
+        raise ValueError(f'Groq respondió {response.status_code}. No se guardó ninguna propuesta.')
+    try:
+        payload = response.json()
+        raw_text = payload['choices'][0]['message']['content']
+        usage = payload.get('usage') or {}
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise ValueError('Groq devolvió una respuesta no reconocida. No se guardó ninguna propuesta.') from None
+    safe_usage = {field: int(usage[field]) for field in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+                  if isinstance(usage.get(field), int) and usage[field] >= 0}
+    result = checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
+                            'groq', GROQ_MODEL, safe_usage)
+    result['criterion_index'] = criterion_index
+    return result

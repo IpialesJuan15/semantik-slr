@@ -141,3 +141,86 @@ def test_cloud_429_explains_known_cause_without_echoing_provider_message(monkeyp
     assert expected in str(caught.value)
     assert 'PRIVATE_PROVIDER_MESSAGE' not in str(caught.value)
     assert 'test-secret' not in str(caught.value)
+
+
+def test_groq_uses_exact_model_and_free_tier_output_cap(monkeypatch):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')
+    captured = {}
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {'choices': [{'message': {'content': json.dumps({'items': [
+                {'index': 0, 'assessment': 'contradice', 'page': 8,
+                 'quote': 'Saudi postgraduate students at King Faisal University',
+                 'explanation': 'El estudio no está en América Latina.'}]})}}],
+                    'usage': {'prompt_tokens': 210, 'completion_tokens': 85, 'total_tokens': 295}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, url, **kwargs):
+            captured.update({'url': url, **kwargs})
+            return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    review = {'inclusion': 'Datos de América Latina\nEstudio empírico', 'exclusion': 'Opinión', 'protocol_version': 3}
+    article = {'title': 'Study', 'doi': '10.1234/example'}
+    pages = [{'page': 8, 'text': 'The study included Saudi postgraduate students at King Faisal University in 2023.'}]
+    result = llm_review.generate_groq_review(review, article, pages, 'hash', 0)
+    sent = captured['json']
+    assert captured['url'] == llm_review.GROQ_URL
+    assert sent['model'] == 'qwen/qwen3.8-27b'
+    assert sent['max_completion_tokens'] == 300
+    assert captured['headers']['Authorization'] == 'Bearer test-groq-secret'
+    assert len(json.loads(sent['messages'][1]['content'])['criteria']) == 1
+    assert result['provider'] == 'groq' and result['criterion_index'] == 0
+    assert result['criteria'][0]['quote_verified'] is True
+    assert result['usage']['total_tokens'] == 295
+
+
+def test_groq_reviews_accumulate_per_criterion_without_changing_human_decision(tmp_path, monkeypatch):
+    from backend.app import main
+    with TestClient(create_app(tmp_path / 'groq.sqlite3')) as client:
+        rid = client.post('/api/reviews', json={'title': 'Research', 'question': 'Which articles?',
+            'inclusion': 'Estudio en América Latina\nEstudio empírico', 'exclusion': 'Opinión'}).json()['id']
+        client.post(f'/api/reviews/{rid}/articles', json={'title': 'Candidate', 'doi': '10.1234/example'})
+        aid = client.get(f'/api/reviews/{rid}/articles').json()[0]['id']
+        client.post(f'/api/articles/{aid}/document/upload', files={'file': ('study.pdf', sample_pdf(), 'application/pdf')})
+        def fake_groq(review, article, pages, sha, index):
+            criterion = main.criteria_for(review)[index]
+            return {'provider': 'groq', 'model': main.GROQ_MODEL, 'document_sha256': sha,
+                'protocol_version': review['protocol_version'], 'passages_examined': 3,
+                'criteria': [{'criterion': criterion['text'], 'kind': criterion['kind'],
+                    'assessment': 'incierto', 'page': None, 'quote': '',
+                    'explanation': 'Sin cita', 'quote_verified': False}],
+                'usage': {'prompt_tokens': 150, 'completion_tokens': 60, 'total_tokens': 210},
+                'warning': 'Propuesta experimental'}
+        monkeypatch.setattr(main, 'generate_groq_review', fake_groq)
+        first = client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'groq', 'criterion_index': 0})
+        assert first.status_code == 200 and first.json()['completed_criteria'] == 1
+        assert first.json()['criteria'][1]['analyzed'] is False
+        second = client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'groq', 'criterion_index': 1})
+        assert second.status_code == 200 and second.json()['completed_criteria'] == 2
+        assert second.json()['criteria'][0]['analyzed'] is True
+        assert second.json()['usage']['total_tokens'] == 420
+        assert client.get(f'/api/articles/{aid}/document/llm-review').json()['completed_criteria'] == 2
+        assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
+
+
+def test_groq_limit_has_actionable_message_and_keeps_provider_text_private(monkeypatch):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')
+    class FakeResponse:
+        status_code = 429
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    review = {'inclusion': 'Estudio empírico', 'exclusion': 'Opinión', 'protocol_version': 1}
+    with pytest.raises(ValueError, match='Espera al menos un minuto') as caught:
+        llm_review.generate_groq_review(review, {'title': 'Candidate', 'doi': ''},
+                                         [{'page': 1, 'text': 'Empirical study with university students in Latin America.'}],
+                                         'hash', 0)
+    assert 'test-groq-secret' not in str(caught.value)

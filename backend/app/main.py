@@ -19,7 +19,7 @@ from pypdf import PdfReader
 from .analysis import analyze, MODEL
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
-from .llm_review import generate_cloud_review, generate_local_review
+from .llm_review import GROQ_MODEL, criteria_for, generate_cloud_review, generate_groq_review, generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
 from .storage import article_json, connect, event, initialize
@@ -81,7 +81,8 @@ class AnalysisInput(BaseModel):
     engine: Literal['lexical', 'semantic'] = 'lexical'
 
 class LLMReviewInput(BaseModel):
-    provider: Literal['local', 'cloud'] = 'local'
+    provider: Literal['local', 'cloud', 'groq'] = 'local'
+    criterion_index: int | None = Field(default=None, ge=0, le=11)
 
 class PublishedInput(BaseModel):
     doi: str = Field(min_length=3, max_length=300)
@@ -122,7 +123,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.10.1', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.11.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -208,7 +209,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'mode':'local_single_user', 'version':'0.10.1'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.11.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -387,8 +388,12 @@ def create_app(database_path=None):
         if document['truncated']:
             raise HTTPException(422, 'La extracción del PDF quedó incompleta. Revisa el archivo antes de usar el LLM.')
         try:
-            generator = generate_cloud_review if payload.provider == 'cloud' else generate_local_review
-            result = generator(review, article, json.loads(document['pages_json']), document['sha256'])
+            pages = json.loads(document['pages_json'])
+            if payload.provider == 'groq':
+                result = generate_groq_review(review, article, pages, document['sha256'], payload.criterion_index)
+            else:
+                generator = generate_cloud_review if payload.provider == 'cloud' else generate_local_review
+                result = generator(review, article, pages, document['sha256'])
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
         with connect(path) as db:
@@ -397,11 +402,36 @@ def create_app(database_path=None):
             current_document = db.execute('SELECT sha256 FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
             if current['protocol_version'] != review['protocol_version'] or not current_document or current_document['sha256'] != document['sha256']:
                 raise HTTPException(409, 'El protocolo o PDF cambió durante el análisis. Vuelve a ejecutarlo.')
+            if payload.provider == 'groq':
+                all_criteria = criteria_for(review)
+                previous = db.execute('''SELECT result_json FROM document_reviews WHERE article_id=?
+                    AND protocol_version=? AND document_sha256=? AND model=? ORDER BY id DESC LIMIT 1''',
+                    (article_id, review['protocol_version'], document['sha256'], GROQ_MODEL)).fetchone()
+                old = json.loads(previous['result_json']) if previous else {}
+                old_items = old.get('criteria') or []
+                current_items = []
+                for index, criterion in enumerate(all_criteria):
+                    fallback = {'criterion': criterion['text'], 'kind': criterion['kind'],
+                                'assessment': 'incierto', 'page': None, 'quote': '',
+                                'explanation': 'Este criterio aún no se ha analizado con Groq.',
+                                'quote_verified': False, 'analyzed': False}
+                    prior = old_items[index] if index < len(old_items) else None
+                    if prior and prior.get('criterion') == criterion['text'] and prior.get('kind') == criterion['kind']:
+                        fallback = prior
+                    current_items.append(fallback)
+                selected_item = result['criteria'][0]
+                current_items[payload.criterion_index] = {**selected_item, 'analyzed': True}
+                result['criteria'] = current_items
+                result['completed_criteria'] = sum(item.get('analyzed') for item in current_items)
+                result['passages_examined'] += old.get('passages_examined', 0)
+                result['usage'] = {name: result['usage'].get(name, 0) + (old.get('usage') or {}).get(name, 0)
+                                   for name in ('prompt_tokens', 'completion_tokens', 'total_tokens')}
             db.execute('INSERT INTO document_reviews (article_id,protocol_version,document_sha256,model,result_json) VALUES (?,?,?,?,?)',
                        (article_id, review['protocol_version'], document['sha256'], result['model'], json.dumps(result, ensure_ascii=False)))
             event(db, article['review_id'], 'llm_pdf_review_created',
                   {'article_id': article_id, 'provider': payload.provider, 'model': result['model'], 'protocol_version': review['protocol_version'],
-                   'document_sha256': document['sha256'], 'verified_quotes': sum(item['quote_verified'] for item in result['criteria'])})
+                   'document_sha256': document['sha256'], 'criterion_index': payload.criterion_index if payload.provider == 'groq' else None,
+                   'verified_quotes': sum(item['quote_verified'] for item in result['criteria'])})
         return {'status': 'ready', **result}
 
     @app.post('/api/reviews/{review_id}/articles',status_code=201)
