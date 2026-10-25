@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.11.1
+# Semantik SLR · versión 0.14
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 

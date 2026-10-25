@@ -59,7 +59,7 @@ def test_report_freezes_pdf_proposals_and_preserves_human_pending_status(tmp_pat
         save_proposal(path, aid, sha)
         report, response = snapshot(client, rid)
         data = response.json()
-        assert data['schema_version'] == 4
+        assert data['schema_version'] == 5
         assert data['status'] == 'draft' and data['counts']['pending'] == 1
         assert data['articles'][0]['decision'] == 'pending'
         evidence = data['articles'][0]['document_evidence']
