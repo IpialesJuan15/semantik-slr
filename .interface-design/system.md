@@ -6,12 +6,12 @@ Skill aplicada: Interface Design de Damola Akinleye (`.agents/skills/interface-d
 
 Investigador que acaba de recuperar artículos y necesita contrastar cada candidato con una revisión publicada. Debe ver el siguiente paso sin adivinar qué pestaña abrir, leer la evidencia al lado de la lista y dejar una decisión motivada. La pantalla debe sentirse como una mesa de lectura académica: calmada, rigurosa y clara.
 
-Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisiones, historial e informe. Mundo físico: papel blanco, márgenes de anotación violeta, tinta gris cálida, separadores discretos y señal ámbar para tareas pendientes. La firma de la interfaz es la **lista de lectura junto al expediente del artículo**, precedida por una guía de siguiente paso calculada con el estado real de la revisión.
+Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisiones, historial e informe. Mundo físico: papel blanco, márgenes de anotación rojo cálido, tinta gris cálida, separadores discretos y señal ámbar para tareas pendientes. La firma de la interfaz es la **lista de lectura junto al expediente del artículo**, precedida por una guía de siguiente paso calculada con el estado real de la revisión.
 
 ## Tokens y composición
 
-- Fondo `#f7f7fa`, papel `#ffffff`, tinta `#34313d`, anotación `#7251a2`, texto secundario `#746a7e`, línea `#e4e2eb`, control inset `#faf8fc`. Sin verde, azul oscuro ni superficies oscuras.
-- Estrategia de profundidad: superficies claras y bordes suaves; el foco violeta se reserva a acciones y selección. Sin sombras decorativas ni degradados.
+- Fondo `#faf7f5`, papel `#ffffff`, tinta `#352d2c`, anotación `#ad3d43`, texto secundario `#6b5d5b`, línea `#e7dcd8`, control inset `#fdf7f5`. Sin morado, verde, azul oscuro ni superficies oscuras.
+- Estrategia de profundidad: superficies claras, bordes suaves y sombra discreta; el rojo cálido se reserva a acciones y selección. Sin degradados decorativos.
 - Escala de espacio basada en 4 px. Controles de al menos 40 px, con 44 px como objetivo en móvil. Tarjeta guía: 25–28 px de relleno; columna de lista: 17 px; filas: 14 px verticales.
 - Tipografía Aptos/Segoe UI para la herramienta y Georgia para resúmenes/citas documentales. Jerarquía por peso y contraste; títulos de guía 22 px, títulos de sección 18 px, controles y cuerpo 13 px, metadatos 11 px.
 - Escritorio: lista de candidatos 37 %, expediente 63 %, con 20 px de separación. Móvil: columnas apiladas, lista con altura limitada para llegar al expediente sin desplazamiento interminable.
@@ -69,3 +69,9 @@ Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña sepa
 - UI/UX Pro Max se consultó para portafolios creativos, brutalismo, patrones de contenido y movimiento accesible. La adaptación conserva el dominio de la revisión sistemática.
 - Una sola pieza expresiva domina la portada: marco, título grande y número real de proyecto en cada vista previa. El expediente mantiene jerarquía documental y citas legibles.
 - La portada y el artículo seleccionado usan animaciones cortas; la preferencia de movimiento reducido las desactiva. No se usan parallax ni desplazamiento forzado.
+
+## Ajuste de la versión 0.17
+
+- Se consultó UI/UX Pro Max para telemedicina y Soft UI Evolution. El catálogo propuso cian y verde; se respetó la preferencia explícita de rojo y la naturaleza académica del producto.
+- Las tarjetas, formularios, lista, expediente y navegación usan superficies claras con radios moderados y sombras discretas. El rojo `#ad3d43` sobre blanco supera 4.5:1.
+- La migración de colores abarca todos los estilos del frontend y el favicon, para evitar controles secundarios morados. La interfaz conserva citas, procedencia y decisión humana.
