@@ -59,13 +59,6 @@ def initialize(path):
           truncated INTEGER NOT NULL DEFAULT 0, pages_json TEXT NOT NULL,
           pdf BLOB NOT NULL,
           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
-        CREATE TABLE IF NOT EXISTS article_extractions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-          protocol_version INTEGER NOT NULL, document_sha256 TEXT NOT NULL,
-          data_json TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
-        CREATE INDEX IF NOT EXISTS article_extractions_lookup ON article_extractions(article_id,protocol_version,document_sha256,id);
         CREATE TABLE IF NOT EXISTS document_reviews (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,

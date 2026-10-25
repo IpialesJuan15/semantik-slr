@@ -48,21 +48,6 @@ def render_document_evidence(articles):
                         f'<small>SHA-256 del PDF: {escape(document["sha256"])}</small>')
         if document.get('truncated'):
             sections.append('<p>La extracción de este PDF quedó incompleta.</p>')
-        extraction = (article.get('extraction') or {}).get('facts') or {}
-        if article.get('decision') == 'included':
-            from .extraction import FIELDS
-            missing = [label for key,(label,_) in FIELDS.items() if key not in extraction]
-            sections.append('<p>Ficha confirmada: ' + escape(len(extraction)) + ' de ' + escape(len(FIELDS)) + ' campos. ' +
-                            ('Pendientes: ' + escape(', '.join(missing)) + '.' if missing else 'Todos los campos registrados.') + '</p>')
-        if extraction:
-            sections.append('<h4>Ficha confirmada por el investigador</h4><p>Datos respaldados por citas del PDF vigente.</p>')
-            from .extraction import FIELDS
-            for name, fact in extraction.items():
-                if name not in FIELDS: continue
-                sections.append('<div class="criterion-evidence"><strong>' + escape(FIELDS[name][0]) + '</strong>: ' +
-                                escape(fact.get('value')) + '<blockquote>' + escape(fact.get('quote')) +
-                                '</blockquote><p>Página ' + escape(fact.get('page')) +
-                                '; cita localizada en el PDF.</p></div>')
         if not proposal:
             sections.append('<p>Sin propuesta de IA vigente para este PDF y protocolo.</p></section>')
             continue

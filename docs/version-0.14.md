@@ -1,9 +1,0 @@
-# Versión 0.14: ficha de extracción de estudios incluidos
-
-El expediente de un artículo incluido incorpora seis campos: país y contexto, participantes, herramienta de IA, técnica de IA, método y resultados. Cada campo puede quedar vacío cuando la fuente no lo permite identificar. El investigador escribe el valor, selecciona o copia una cita y señala la página. La aplicación comprueba que la cita aparece textualmente en la página extraída antes de guardar. Buscar una cita usa el motor semántico local; las sugerencias no rellenan automáticamente el valor.
-
-La ficha solo se puede guardar cuando la inclusión humana pertenece al protocolo vigente y hay un PDF completamente extraído. Cada guardado se conserva como un nuevo registro; la ficha visible se vincula al hash del PDF y a la versión del protocolo. Cambiar cualquiera deja obsoleta la ficha anterior sin borrar el historial. Los informes JSON/HTML congelan la ficha vigente y separan los datos confirmados por el investigador de las propuestas del LLM. El HTML informa cuántos de los seis campos se han registrado.
-
-Uso: actualizar rama `feature/llm-nube-opcional`, reiniciar y abrir un artículo incluido que tenga PDF. En «Ficha del estudio incluido», abrir un campo, escribir el dato, buscar una cita en el PDF o copiar una exacta, comprobar la página y guardar. Dejar la técnica de IA sin llenar si el artículo no la identifica. Generar una nueva versión del informe para incluir la ficha.
-
-Validación: 42 pruebas Python y compilación React/Vite. Prueba con el PDF real de DOI 10.15517/aie.v24i1.55612: se verificaron una cita del contexto costarricense de la página 9 y otra de Copy.ai de la página 11. No se ha probado la interfaz visual en el Windows del investigador; la búsqueda local puede omitir evidencia y no sustituye lectura humana.

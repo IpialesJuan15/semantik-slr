@@ -8,7 +8,6 @@ import {AnalysisPanel} from './analysis-panel.jsx'
 import {SearchReceipt} from './search-receipt.jsx'
 import {ArticleQueue} from './article-queue.jsx'
 import {CandidateDocument} from './candidate-document.jsx'
-import {ArticleExtraction} from './article-extraction.jsx'
 
 const emptyArticle={title:'',abstract:'',doi:'',year:'',authors:'',url:'',is_oa:false};
 function localToday(){const value=new Date();return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`}
@@ -108,7 +107,6 @@ function ArticleDetail({article,review,busy,onClose,onDecision,onDocumentSaved})
   {article.source==='DOAJ'&&<p className="fine-print">DOAJ registró el año {article.year||'sin año'}. Si está cerca del límite de tu búsqueda, confirma día y mes en el artículo.</p>}
   <h4>Resumen original</h4><p className="abstract">{article.abstract||'Este registro no tiene resumen. Consulta la fuente antes de decidir.'}</p>
   <CandidateDocument articleId={article.id} review={review} onSaved={onDocumentSaved}/>
-  <ArticleExtraction article={article} onSaved={onDocumentSaved}/>
   {result&&<details className="evidence-drawer" id={`evidence-${article.id}`}><summary>Ver {result.evidence.length} fragmentos sugeridos por {result.engine==='semantic'?'el modelo semántico':'TF-IDF'}</summary><p>Son frases localizadas en el título o resumen. Pueden parecerse a un criterio sin demostrar que se cumple. El puntaje no es una probabilidad de inclusión.</p><small>Protocolo v{result.protocol_version} · {result.model}</small><div className="evidence-list">{result.evidence.map((item,index)=><div className="evidence" key={index}><strong>{item.kind==='inclusion'?'Criterio de inclusión':'Criterio de exclusión'}: {item.criterion}</strong><blockquote>{item.signal_present?item.quote:'No se localizó un fragmento cercano en título o resumen. Revisa la fuente.'}</blockquote><small>Parecido {item.similarity.toFixed(3)} · Verifica el criterio en el artículo</small></div>)}</div>{result.recommendation&&<p className="notice">Sugerencia experimental: {labels[result.recommendation.label]}. Entrenada con {result.recommendation.training_examples} decisiones; no validada de forma independiente.</p>}</details>}
   <form className="decision-form" onSubmit={event=>{event.preventDefault();onDecision({decision,reason})}}><div className="decision-heading"><h4>Tu decisión</h4><p>La decisión la toma el investigador. Explica qué encontraste en la fuente.</p></div><label className="field"><span>Estado</span><select aria-label="Decisión del investigador" value={decision} onChange={event=>setDecision(event.target.value)}>{Object.entries(labels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="field"><span>Motivo de la decisión *</span><textarea required minLength={3} maxLength={4000} rows={3} value={reason} onChange={event=>setReason(event.target.value)} placeholder="Ej.: estudio empírico en Costa Rica; describe el uso concreto de Copy.ai en evaluación de escritura."/></label><button className="primary" disabled={busy}>{busy?'Guardando…':'Guardar decisión'}</button></form>
  </section>

@@ -19,7 +19,6 @@ from pypdf import PdfReader
 from .analysis import analyze, MODEL
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
-from .extraction import FIELDS, latest_extraction, verify_facts
 from .pdf_retrieval import retrieve_passages
 from .llm_review import GROQ_MODEL, criteria_for, generate_cloud_review, generate_groq_review, generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
@@ -82,12 +81,6 @@ class DecisionInput(BaseModel):
 class AnalysisInput(BaseModel):
     engine: Literal['lexical', 'semantic'] = 'lexical'
 
-class ExtractionInput(BaseModel):
-    facts: dict[str, dict]
-
-class ExtractionSearchInput(BaseModel):
-    retrieval: Literal['semantic', 'lexical'] = 'semantic'
-
 class LLMReviewInput(BaseModel):
     retrieval: Literal['semantic', 'lexical', 'legacy'] = 'legacy'
     provider: Literal['local', 'cloud', 'groq'] = 'local'
@@ -132,7 +125,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.14.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.13.1', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -218,7 +211,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.14.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.13.1'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -386,45 +379,6 @@ def create_app(database_path=None):
                 AND protocol_version=? AND document_sha256=? ORDER BY id DESC LIMIT 1''',
                 (article_id, review['protocol_version'], document['sha256'])).fetchone()
         return {'status': 'ready', 'created_at': row['created_at'], **json.loads(row['result_json'])} if row else {'status': 'missing'}
-
-    @app.get('/api/articles/{article_id}/extraction')
-    def get_extraction(article_id: int):
-        with connect(path) as db:
-            article=get_candidate(db,article_id)
-            review=get_review(db,article['review_id'])
-            document=db.execute('SELECT sha256 FROM article_documents WHERE article_id=?',(article_id,)).fetchone()
-            result=latest_extraction(db,article_id,review['protocol_version'],document['sha256']) if document else {'facts':{},'created_at':None}
-        return {'status':'ready' if document else 'missing_pdf','fields':{k:v[0] for k,v in FIELDS.items()},**result}
-
-    @app.post('/api/articles/{article_id}/extraction/suggest/{field}')
-    def suggest_extraction(article_id: int, field: str, payload: ExtractionSearchInput):
-        if field not in FIELDS: raise HTTPException(404,'Campo de extracción desconocido.')
-        with connect(path) as db:
-            get_candidate(db,article_id)
-            document=db.execute('SELECT sha256,pages_json,truncated FROM article_documents WHERE article_id=?',(article_id,)).fetchone()
-        if not document or document['truncated']: raise HTTPException(422,'Adjunta un PDF con texto completo antes de buscar citas.')
-        try:
-            return retrieve_passages(json.loads(document['pages_json']),[{'text':FIELDS[field][1]}],document['sha256'],path,payload.retrieval)
-        except ValueError as error:
-            raise HTTPException(422,str(error)) from None
-
-    @app.put('/api/articles/{article_id}/extraction')
-    def save_extraction(article_id: int, payload: ExtractionInput):
-        with connect(path) as db:
-            article=get_candidate(db,article_id)
-            review=get_review(db,article['review_id'])
-            if article['decision']!='included' or article['decision_version']!=review['protocol_version']:
-                raise HTTPException(422,'Confirma primero la inclusión de este artículo con el protocolo vigente.')
-            document=db.execute('SELECT sha256,pages_json,truncated FROM article_documents WHERE article_id=?',(article_id,)).fetchone()
-            if not document or document['truncated']: raise HTTPException(422,'Adjunta primero el PDF completo de este artículo.')
-            try:
-                facts=verify_facts(payload.facts,json.loads(document['pages_json']))
-            except ValueError as error:
-                raise HTTPException(422,str(error)) from None
-            db.execute('INSERT INTO article_extractions (article_id,protocol_version,document_sha256,data_json) VALUES (?,?,?,?)',
-                       (article_id,review['protocol_version'],document['sha256'],json.dumps(facts,ensure_ascii=False)))
-            event(db,article['review_id'],'human_extraction_saved',{'article_id':article_id,'fields':list(facts),'protocol_version':review['protocol_version'],'document_sha256':document['sha256']})
-        return {'status':'ready','facts':facts}
 
     @app.post('/api/articles/{article_id}/document/passages')
     def preview_passages(article_id: int, payload: LLMReviewInput):
@@ -670,12 +624,10 @@ def create_app(database_path=None):
             if not articles: raise HTTPException(422,'Añade artículos antes de generar el reporte.')
             for article in articles:
                 article['document_evidence'] = snapshot_document_evidence(db, article['id'], review['protocol_version'])
-                if article['document_evidence'] and article['decision']=='included' and article['decision_version']==review['protocol_version']:
-                    article['extraction']=latest_extraction(db,article['id'],review['protocol_version'],article['document_evidence']['document']['sha256'])
             history=[{**dict(row),'payload':json.loads(row['payload'])} for row in db.execute('SELECT * FROM events WHERE review_id=? ORDER BY id',(review_id,))]
             review.pop('base_text',None)
             published_base={**json.loads(published_row['snapshot']),'confirmed':bool(published_row['confirmed'])} if published_row else None
-            snapshot={'schema_version':5,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'legacy_base_records':legacy_base_records,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.','Las propuestas del PDF son sugerencias de IA separadas de las decisiones humanas; una cita presente no valida su interpretación.','Esta versión conserva procedencia, pasajes y propuestas; no incluye los archivos PDF originales.']}
+            snapshot={'schema_version':4,'created_at':datetime.now(timezone.utc).isoformat(),'review':review,'published_base':published_base,'articles':articles,'legacy_base_records':legacy_base_records,'history':history,'counts':{state:sum(a['decision']==state for a in articles) for state in ['included','excluded','pending']},'limitations':['Reporte estructurado, no metaanálisis ni nueva síntesis narrativa.','La búsqueda limitada no garantiza cobertura exhaustiva.','Las recomendaciones de modelos requieren validación humana.','Los puntajes de similitud no son probabilidades de inclusión.','Las propuestas del PDF son sugerencias de IA separadas de las decisiones humanas; una cita presente no valida su interpretación.','Esta versión conserva procedencia, pasajes y propuestas; no incluye los archivos PDF originales.']}
             snapshot['decisions_needing_recheck']=[a['id'] for a in articles if a['decision']!='pending' and a['decision_version']!=review['protocol_version']]
             snapshot['status']='draft' if snapshot['counts']['pending'] or snapshot['decisions_needing_recheck'] else 'screened'
             serialized=json.dumps(snapshot,ensure_ascii=False,sort_keys=True)
