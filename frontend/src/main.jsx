@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import './research-workbench.css'
 import './workflow-polish.css'
+import './compact-ui.css'
 import { Workspace } from './workspace.jsx'
 import { ReviewForm } from './review-form.jsx'
 import { api } from './api.js'
@@ -20,8 +21,8 @@ function App() {
   useEffect(()=>{if(path==='/reviews/new')api('/published-template').then(setTemplate).catch(e=>setError(e.message))},[path])
   const shown = reviews.filter(r=>`${r.title} ${r.question}`.toLowerCase().includes(query.toLowerCase()))
   return <div className="app-layout"><a href="#main" className="skip">Ir al contenido</a>
-    <aside className="sidebar"><button className="brand" onClick={()=>go('/')}><span className="logo">s</span><span>semantik<small>Revisiones vivas</small></span></button><div className="nav-group"><p>Investigación</p><button className={path==='/'?'nav active':'nav'} onClick={()=>go('/')}><span>▦</span> Mis revisiones</button><button className={path==='/reviews/new'?'nav active':'nav'} onClick={()=>go('/reviews/new')}><span>＋</span> Cargar revisión publicada</button></div><div className="side-note"><strong>Tu criterio, respaldado por evidencia.</strong><p>Explora, compara y documenta cada decisión.</p><small>Versión 0.13.1 · Uso local</small></div></aside>
-    <div className="page"><header><span>Espacio de investigación</span><span className="version">Prototipo de tesis</span></header><main id="main">
+    <header className="topbar"><div className="topbar-inner"><button className="brand" onClick={()=>go('/')} aria-label="Semantik: ir a mis revisiones"><span className="logo">s</span><span>semantik<small>Revisiones vivas</small></span></button><nav className="topbar-nav" aria-label="Navegación principal"><button className={path==='/'?'nav active':'nav'} onClick={()=>go('/')} aria-current={path==='/'?'page':undefined}>Mis revisiones</button><button className={path==='/reviews/new'?'nav active':'nav'} onClick={()=>go('/reviews/new')} aria-current={path==='/reviews/new'?'page':undefined}>Cargar revisión</button></nav><span className="topbar-version">v0.14.0 · local</span></div></header>
+    <div className="page"><main id="main">
       {error&&<div role="alert" className="error">{error}</div>}
       {path==='/'?<><div className="page-title"><div><h1>Mis revisiones</h1><p>Parte de una publicación original y registra los cambios con evidencia.</p></div><button className="primary" onClick={()=>go('/reviews/new')}>Cargar revisión publicada</button></div>
       <div className="overview"><div><b>{reviews.length}</b><span>Revisiones</span></div><div><b>{reviews.reduce((n,r)=>n+r.article_count,0)}</b><span>Artículos registrados</span></div><div><b>{reviews.reduce((n,r)=>n+r.included_count,0)}</b><span>Incluidos por el revisor</span></div></div>

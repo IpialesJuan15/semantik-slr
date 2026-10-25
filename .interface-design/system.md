@@ -49,3 +49,10 @@ Dominio: protocolo, publicación base, fuente, candidatos, fragmentos, decisione
 - **Groq por criterio**: al elegir Groq aparece un segundo selector de criterio. La explicación del plan gratuito queda junto a la acción. El expediente muestra progreso de criterios consultados y distingue los todavía no analizados de respuestas inciertas.
 
 Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña separada para cada acción del mismo artículo, puntuación tratada como probabilidad de inclusión. Mantener siempre los estados vacío, error, ocupación, foco y móvil.
+
+## Ajuste de la versión 0.14
+
+- La navegación usa una barra superior de 64 px en escritorio y una fila compacta en móvil. La mesa de lectura aprovecha el ancho antes ocupado por la barra lateral.
+- Las pestañas de sección y la navegación interna del expediente permanecen a la vista al desplazarse. Los saltos llevan directamente a resumen, PDF/asistente o decisión.
+- La guía contextual, el recibo de búsqueda y la configuración de análisis ya terminado reducen su altura. Los filtros de año y estado se muestran bajo demanda; la búsqueda por título permanece visible.
+- El resumen conserva el texto completo y permite expandirse. Ningún bloque automático se interpreta como decisión del investigador.
