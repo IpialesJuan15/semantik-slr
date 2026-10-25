@@ -56,3 +56,10 @@ Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña sepa
 - Las pestañas de sección y la navegación interna del expediente permanecen a la vista al desplazarse. Los saltos llevan directamente a resumen, PDF/asistente o decisión.
 - La guía contextual, el recibo de búsqueda y la configuración de análisis ya terminado reducen su altura. Los filtros de año y estado se muestran bajo demanda; la búsqueda por título permanece visible.
 - El resumen conserva el texto completo y permite expandirse. Ningún bloque automático se interpreta como decisión del investigador.
+
+## Ajuste de la versión 0.15
+
+- El índice de escritorio se organiza verticalmente: navegación general arriba, secciones de la revisión debajo. Sus siete acciones como máximo caben sin desplazamiento.
+- La biblioteca muestra cifras y recorrido en una columna secundaria, junto a los proyectos. El contenido deja de formar bandas del ancho total.
+- La pantalla de candidatos evita repetir una indicación de análisis encima de los propios controles de análisis. La acción de nueva búsqueda vive en la cabecera de artículos.
+- En pantallas estrechas el índice se transforma en una fila superior y las secciones se muestran en pestañas desplazables.
