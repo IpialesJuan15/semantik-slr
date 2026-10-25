@@ -18,5 +18,7 @@ node_modules/
 *.bin
 *.pt
 data/
+!/.agents/skills/ui-ux-pro-max/data/
+!/.agents/skills/ui-ux-pro-max/data/**
 .local/
 .pytest_cache/
