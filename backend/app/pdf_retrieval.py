@@ -21,6 +21,9 @@ LOCATION_CUE = re.compile(r'\b(?:in|at|from|en|de|em)\s+(?:(?:a|an|the|una|un|la
 AI_CRITERION = re.compile(r'inteligencia artificial|\bIA\b|artificial intelligence|\bAI\b|\bNLP\b|\bML\b|\bDL\b', re.I)
 TOOL_USE = re.compile(r'AI[- ]written texts were created using|created using\s+[A-Za-z][\w.]*|\bcopy\.ai\b|chatbot system was designed|AI[- ]powered writing generator|AI piece of software|textos? generados? (?:con|mediante) IA', re.I)
 TECHNIQUE = re.compile(r'\b(?:machine learning|deep learning|natural language processing|aprendizaje automático|aprendizaje profundo|procesamiento del lenguaje natural|NLP)\b', re.I)
+EMPIRICAL_CRITERION = re.compile(r'emp[ií]ric|empirical|conceptual|opiniones?\b|opinion\b', re.I)
+EMPIRICAL_METHOD = re.compile(r'\b(?:quasi[- ]?experimental|experimental design|research design|study design|quantitative|qualitative|mixed methods?|methodolog(?:y|ical)|methods?|methodolog[ií]a|m[eé]todos?|dise[ñn]o|cuasiexperimental|participants?|participantes?|sample of|study sample|muestra de|data (?:were|was) collected|data collection|datos (?:fueron |se )?recopilados|encuestas?|entrevistas?|survey|interviews?|statistical analysis|an[aá]lisis estad[ií]stico)\b', re.I)
+EMPIRICAL_NONSTUDY = re.compile(r'\b(?:literature review|systematic review|conceptual paper|theoretical paper|opinion piece|revisi[oó]n de literatura|revisi[oó]n sistem[aá]tica|art[ií]culo conceptual|ensayo te[oó]rico|art[ií]culo de opini[oó]n)\b', re.I)
 
 
 def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic', limit=6):
@@ -79,6 +82,7 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
     # Ranking is advisory. Main-study signals reduce the chance that a cited
     # article is mistaken for the candidate's own sample or location.
     geography = any(PLACE_CRITERION.search(query) for query in queries)
+    empirical = any(EMPIRICAL_CRITERION.search(query) for query in queries)
     adjusted = []
     for i, chunk in enumerate(chunks):
         excerpt = chunk['text']
@@ -88,6 +92,10 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
         if chunk['page'] <= 2 and main: priority += .16
         if cited and not main: priority -= .28
         if geography and not main: priority -= .14
+        if empirical and (EMPIRICAL_METHOD.search(excerpt) or EMPIRICAL_NONSTUDY.search(excerpt)):
+            priority += .85
+        if empirical and not (EMPIRICAL_METHOD.search(excerpt) or EMPIRICAL_NONSTUDY.search(excerpt)):
+            priority -= .85
         adjusted.append(float(scores[i]) + priority)
     selected = []
     counts = {}
@@ -97,7 +105,8 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
         chunk = chunks[i]
         if i in used or counts.get(chunk['page'], 0) >= 2:
             return False
-        if method == 'lexical' and scores[i] <= 0 and not facet:
+        if method == 'lexical' and scores[i] <= 0 and not facet and not (
+                empirical and (EMPIRICAL_METHOD.search(chunk['text']) or EMPIRICAL_NONSTUDY.search(chunk['text']))):
             return False
         selected.append({**chunk, 'similarity': round(float(scores[i]), 4), 'facet': facet or 'related'})
         used.add(i)
@@ -116,6 +125,8 @@ def retrieve_passages(pages, criteria, pdf_hash, database_path, method='semantic
             if add(i, 'ai_tool'): break
     for i in ranked:
         text = chunks[i]['text']
+        if empirical and not (EMPIRICAL_METHOD.search(text) or EMPIRICAL_NONSTUDY.search(text)):
+            continue
         if geography and (not MAIN_STUDY.search(text) or not LOCATION_CUE.search(text)) and not compound:
             continue
         if geography and compound and not (MAIN_STUDY.search(text) and LOCATION_CUE.search(text) or TOOL_USE.search(text)):

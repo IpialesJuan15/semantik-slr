@@ -281,3 +281,25 @@ def test_uncertain_answer_is_distinct_from_unverifiable_quote():
     assert invented['criteria'][0]['evidence_status']=='quote_unverified'
     assert invented['criteria'][0]['assessment']=='incierto'
     assert 'Inventado' not in invented['criteria'][0]['explanation']
+
+
+def test_empirical_claim_needs_methodological_quote_even_when_quote_exists():
+    from backend.app.llm_review import checked_result
+    criterion = [{'kind': 'inclusion', 'text': 'Investigación primaria empírica.'}]
+    pages = [{'page': 11, 'text': 'The study was conducted from August 2022 to March 2023. '
+                               'A quantitative quasi-experimental design involved eight students.'}]
+    review = {'protocol_version': 3}
+    weak = checked_result(json.dumps({'assessment': 'apoya', 'page': 11,
+        'quote': 'The study was conducted from August 2022 to March 2023.',
+        'explanation': 'Las fechas demuestran investigación empírica.'}),
+        criterion, pages, pages, review, 'hash', 'groq', 'model')['criteria'][0]
+    assert weak['quote_verified'] is True
+    assert weak['assessment'] == 'incierto'
+    assert weak['evidence_status'] == 'insufficient_support'
+    assert 'Las fechas demuestran' not in weak['explanation']
+    strong = checked_result(json.dumps({'assessment': 'apoya', 'page': 11,
+        'quote': 'A quantitative quasi-experimental design involved eight students.',
+        'explanation': 'Describe diseño y muestra.'}),
+        criterion, pages, pages, review, 'hash', 'groq', 'model')['criteria'][0]
+    assert strong['assessment'] == 'apoya'
+    assert strong['evidence_status'] == 'verified'

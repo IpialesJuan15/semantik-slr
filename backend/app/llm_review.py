@@ -7,6 +7,7 @@ import re
 import httpx
 
 from .documents import clean_pdf_text
+from .pdf_retrieval import EMPIRICAL_CRITERION, EMPIRICAL_METHOD, EMPIRICAL_NONSTUDY
 
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
@@ -29,6 +30,8 @@ EVIDENCE_RULES = (
     'marca incierto y explica qué falta. El nombre de una revista no demuestra revisión por pares. '
     'La fecha del experimento no es la fecha de publicación. Distingue datos del estudio principal '
     'de otros estudios citados. No deduzcas ML, DL o NLP solo porque el texto mencione IA. '
+    'Para investigación empírica, cita diseño, participantes, recolección o análisis de datos del estudio principal. '
+    'Un periodo de ejecución por sí solo no demuestra que sea empírico. '
     'Usa exclusivamente los pasajes proporcionados como evidencia.'
 )
 
@@ -85,6 +88,19 @@ def present_in_page(quote, page_text):
         return False
     compact = lambda value: ' '.join(clean_pdf_text(value).split()).casefold()
     return compact(quote) in compact(page_text)
+
+
+def supports_empirical_claim(criterion, assessment, quote):
+    """Reject a date or other generic quote as proof of empirical status.
+
+    This is a narrow safeguard, not a general entailment verifier. A reviewer
+    must still confirm that the cited method belongs to the candidate study.
+    """
+    if not EMPIRICAL_CRITERION.search(criterion['text']) or assessment == 'incierto':
+        return True
+    claims_empirical = ((criterion['kind'] == 'inclusion' and assessment == 'apoya') or
+                        (criterion['kind'] == 'exclusion' and assessment == 'contradice'))
+    return bool((EMPIRICAL_METHOD if claims_empirical else EMPIRICAL_NONSTUDY).search(quote))
 
 
 def request_context(review, article, pages, context=None):
@@ -146,18 +162,22 @@ def checked_result(raw_text, criteria, passages, pages, review, pdf_hash, provid
                  and present_in_page(quote, page_map[page])
                  and any(p['page'] == page and present_in_page(quote, p['text']) for p in passages)
                  and assessment in ('apoya', 'contradice', 'incierto'))
-        evidence_status = ('verified' if valid else
+        unsupported = valid and not supports_empirical_claim(criterion, assessment, quote)
+        evidence_status = ('insufficient_support' if unsupported else 'verified' if valid else
                            'model_uncertain' if assessment == 'incierto' and not quote else
                            'quote_unverified' if quote else 'no_citation')
         results.append({'criterion': criterion['text'], 'kind': criterion['kind'],
-                        'assessment': assessment if valid else 'incierto',
+                        'assessment': assessment if valid and not unsupported else 'incierto',
                         'page': page if valid else None, 'quote': quote if valid else '',
-                        'explanation': str(proposal.get('explanation', ''))[:400] if valid else
-                        'No se obtuvo una cita textual comprobable para este criterio.',
-                        'quote_verified': bool(valid), 'evidence_status': evidence_status})
+                        'explanation': ('La cita existe en el PDF, pero no demuestra el método ni los datos del estudio. Revisa la sección de metodología.'
+                                        if unsupported else str(proposal.get('explanation', ''))[:400] if valid else
+                                        'No se obtuvo una cita textual comprobable para este criterio.'),
+                        'quote_verified': bool(valid), 'evidence_status': evidence_status,
+                        'evidence_validation_version': 2})
     return {'provider': provider, 'model': model, 'document_sha256': pdf_hash,
             'protocol_version': review['protocol_version'], 'passages_examined': len(passages),
             'criteria': results, 'scope': 'experimental_pdf_passages', 'usage': usage or {},
+            'evidence_validation_version': 2,
             'warning': 'Cita presente en el PDF no significa interpretación correcta. Verifica cada criterio y decide tú.'}
 
 

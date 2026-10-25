@@ -87,3 +87,14 @@ def test_compound_criterion_returns_setting_and_tool_separately(tmp_path, monkey
     assert by_facet['ai_tool']['page']==11
     assert 'copy.ai' in by_facet['ai_tool']['text']
     assert all(p['page'] != 18 for p in result['passages'])
+
+
+def test_empirical_criterion_prefers_method_over_study_dates(tmp_path):
+    pages = [
+        {'page': 1, 'text': 'The study was conducted from August 2022 to March 2023. '*9},
+        {'page': 2, 'text': 'A quantitative quasi-experimental design involved eight students and ten professors. Data were collected using a writing assessment. '*5},
+    ]
+    result = r.retrieve_passages(pages, [{'text': 'Investigación primaria empírica'}],
+                                 'empirical', tmp_path / 'empirical.db', 'lexical')
+    assert result['passages']
+    assert all(passage['page'] == 2 for passage in result['passages'])
