@@ -63,3 +63,9 @@ Rechazos deliberados: tablero de tarjetas métricas repetidas, una pestaña sepa
 - La biblioteca muestra cifras y recorrido en una columna secundaria, junto a los proyectos. El contenido deja de formar bandas del ancho total.
 - La pantalla de candidatos evita repetir una indicación de análisis encima de los propios controles de análisis. La acción de nueva búsqueda vive en la cabecera de artículos.
 - En pantallas estrechas el índice se transforma en una fila superior y las secciones se muestran en pestañas desplazables.
+
+## Ajuste de la versión 0.16
+
+- UI/UX Pro Max se consultó para portafolios creativos, brutalismo, patrones de contenido y movimiento accesible. La adaptación conserva el dominio de la revisión sistemática.
+- Una sola pieza expresiva domina la portada: marco, título grande y número real de proyecto en cada vista previa. El expediente mantiene jerarquía documental y citas legibles.
+- La portada y el artículo seleccionado usan animaciones cortas; la preferencia de movimiento reducido las desactiva. No se usan parallax ni desplazamiento forzado.
