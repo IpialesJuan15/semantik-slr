@@ -85,6 +85,7 @@ class LLMReviewInput(BaseModel):
     retrieval: Literal['semantic', 'lexical', 'legacy'] = 'legacy'
     provider: Literal['local', 'gemini', 'groq'] = 'local'
     criterion_index: int | None = Field(default=None, ge=0, le=11)
+    gemini_model: Literal['gemini-3.8-flash', 'gemini-3.5-flash-lite'] | None = None
 
 class PublishedInput(BaseModel):
     doi: str = Field(min_length=3, max_length=300)
@@ -125,7 +126,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.18.3', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.19.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -211,7 +212,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'gemini_key_configured':bool(os.getenv('SEMANTIK_GEMINI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.18.3'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'gemini_key_configured':bool(os.getenv('SEMANTIK_GEMINI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.19.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -410,7 +411,7 @@ def create_app(database_path=None):
             context = None
             if payload.retrieval != 'legacy':
                 chosen = criteria_for(review)
-                if payload.provider == 'groq':
+                if payload.provider in ('groq', 'gemini'):
                     if payload.criterion_index is None or payload.criterion_index >= len(chosen):
                         raise ValueError('Selecciona un criterio válido.')
                     chosen = [chosen[payload.criterion_index]]
@@ -420,9 +421,12 @@ def create_app(database_path=None):
             options = {'context': context} if context else {}
             if payload.provider == 'groq':
                 result = generate_groq_review(review, article, pages, document['sha256'], payload.criterion_index, **options)
+            elif payload.provider == 'gemini':
+                result = generate_gemini_review(review, article, pages, document['sha256'],
+                                                criterion_index=payload.criterion_index,
+                                                model_choice=payload.gemini_model, **options)
             else:
-                generator = generate_gemini_review if payload.provider == 'gemini' else generate_local_review
-                result = generator(review, article, pages, document['sha256'], **options)
+                result = generate_local_review(review, article, pages, document['sha256'], **options)
             if context:
                 result['retrieval'] = context['retrieval']
                 for item in result['criteria']:
@@ -437,18 +441,18 @@ def create_app(database_path=None):
             current_document = db.execute('SELECT sha256 FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
             if current['protocol_version'] != review['protocol_version'] or not current_document or current_document['sha256'] != document['sha256']:
                 raise HTTPException(409, 'El protocolo o PDF cambió durante el análisis. Vuelve a ejecutarlo.')
-            if payload.provider == 'groq':
+            if payload.provider in ('groq', 'gemini') and payload.criterion_index is not None:
                 all_criteria = criteria_for(review)
                 previous = db.execute('''SELECT result_json FROM document_reviews WHERE article_id=?
                     AND protocol_version=? AND document_sha256=? AND model=? ORDER BY id DESC LIMIT 1''',
-                    (article_id, review['protocol_version'], document['sha256'], GROQ_MODEL)).fetchone()
+                    (article_id, review['protocol_version'], document['sha256'], result['model'])).fetchone()
                 old = json.loads(previous['result_json']) if previous else {}
                 old_items = old.get('criteria') or []
                 current_items = []
                 for index, criterion in enumerate(all_criteria):
                     fallback = {'criterion': criterion['text'], 'kind': criterion['kind'],
                                 'assessment': 'incierto', 'page': None, 'quote': '',
-                                'explanation': 'Este criterio aún no se ha analizado con Groq.',
+                                'explanation': 'Este criterio aún no se ha analizado con el modelo elegido.',
                                 'quote_verified': False, 'analyzed': False}
                     prior = old_items[index] if index < len(old_items) else None
                     if prior and prior.get('criterion') == criterion['text'] and prior.get('kind') == criterion['kind']:
@@ -465,7 +469,7 @@ def create_app(database_path=None):
                        (article_id, review['protocol_version'], document['sha256'], result['model'], json.dumps(result, ensure_ascii=False)))
             event(db, article['review_id'], 'llm_pdf_review_created',
                   {'article_id': article_id, 'provider': payload.provider, 'model': result['model'], 'protocol_version': review['protocol_version'],
-                   'document_sha256': document['sha256'], 'criterion_index': payload.criterion_index if payload.provider == 'groq' else None,
+                   'document_sha256': document['sha256'], 'criterion_index': payload.criterion_index if payload.provider in ('groq', 'gemini') else None,
                    'verified_quotes': sum(item['quote_verified'] for item in result['criteria'])})
         return {'status': 'ready', **result}
 

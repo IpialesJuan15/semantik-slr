@@ -62,7 +62,7 @@ def test_llm_suggestion_is_separate_from_human_decision_and_protocol_version(tmp
         assert result.status_code == 200 and result.json()['status'] == 'ready'
         assert client.get(f'/api/articles/{aid}/document/llm-review').json()['model'] == 'test-model'
         assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
-        monkeypatch.setattr(main, 'generate_gemini_review', lambda review, article, pages, sha:
+        monkeypatch.setattr(main, 'generate_gemini_review', lambda review, article, pages, sha, **kwargs:
                             {**fake_review(review, article, pages, sha), 'provider': 'gemini', 'model': 'fake-gemini'})
         gemini = client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'gemini'})
         assert gemini.status_code == 200 and gemini.json()['provider'] == 'gemini'
@@ -343,6 +343,38 @@ def test_groq_reviews_accumulate_per_criterion_without_changing_human_decision(t
         assert second.json()['criteria'][0]['analyzed'] is True
         assert second.json()['usage']['total_tokens'] == 420
         assert client.get(f'/api/articles/{aid}/document/llm-review').json()['completed_criteria'] == 2
+        assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
+
+
+def test_gemini_reviews_one_criterion_per_request_and_keeps_models_separate(tmp_path, monkeypatch):
+    from backend.app import main
+    with TestClient(create_app(tmp_path / 'gemini.sqlite3')) as client:
+        rid = client.post('/api/reviews', json={'title': 'Research', 'question': 'Which articles?',
+            'inclusion': 'Lugar del estudio\nInvestigación empírica', 'exclusion': 'Opinión'}).json()['id']
+        client.post(f'/api/reviews/{rid}/articles', json={'title': 'Candidate', 'doi': '10.1234/example'})
+        aid = client.get(f'/api/reviews/{rid}/articles').json()[0]['id']
+        client.post(f'/api/articles/{aid}/document/upload', files={'file': ('study.pdf', sample_pdf(), 'application/pdf')})
+        def fake_gemini(review, article, pages, sha, criterion_index=None, model_choice=None, context=None):
+            criterion = main.criteria_for(review)[criterion_index]
+            return {'provider': 'gemini', 'model': model_choice, 'document_sha256': sha,
+                'protocol_version': review['protocol_version'], 'passages_examined': 2,
+                'criteria': [{'criterion': criterion['text'], 'kind': criterion['kind'],
+                    'assessment': 'incierto', 'page': None, 'quote': '',
+                    'explanation': 'Sin cita', 'quote_verified': False}],
+                'usage': {'prompt_tokens': 80, 'completion_tokens': 20, 'total_tokens': 100}}
+        monkeypatch.setattr(main, 'generate_gemini_review', fake_gemini)
+        endpoint = f'/api/articles/{aid}/document/llm-review'
+        first = client.post(endpoint, json={'provider': 'gemini', 'criterion_index': 0,
+            'gemini_model': 'gemini-3.8-flash'}).json()
+        assert first['completed_criteria'] == 1 and first['criteria'][1]['analyzed'] is False
+        second = client.post(endpoint, json={'provider': 'gemini', 'criterion_index': 1,
+            'gemini_model': 'gemini-3.8-flash'}).json()
+        assert second['completed_criteria'] == 2 and second['usage']['total_tokens'] == 200
+        lite = client.post(endpoint, json={'provider': 'gemini', 'criterion_index': 0,
+            'gemini_model': 'gemini-3.5-flash-lite'}).json()
+        assert lite['model'] == 'gemini-3.5-flash-lite' and lite['completed_criteria'] == 1
+        assert client.post(endpoint, json={'provider': 'gemini', 'criterion_index': 0,
+            'gemini_model': 'gemini-4-argon'}).status_code == 422
         assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
 
 

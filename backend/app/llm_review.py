@@ -204,13 +204,22 @@ def generate_local_review(review, article, pages, pdf_hash, context=None):
     return checked_result(raw_text, criteria, passages, pages, review, pdf_hash, 'local', MODEL)
 
 
-def generate_gemini_review(review, article, pages, pdf_hash, context=None):
+def generate_gemini_review(review, article, pages, pdf_hash, criterion_index=None, model_choice=None, context=None):
     key = os.getenv('SEMANTIK_GEMINI_API_KEY', '').strip()
     if not key:
         raise ValueError('Falta SEMANTIK_GEMINI_API_KEY. Configura tu clave de Google AI Studio en la terminal que inicia la aplicación; no la pegues en el chat.')
-    model = os.getenv('SEMANTIK_GEMINI_MODEL', GEMINI_MODEL).strip()
+    model = (model_choice or os.getenv('SEMANTIK_GEMINI_MODEL', GEMINI_MODEL)).strip()
     if not re.fullmatch(r'gemini-[a-z0-9.-]{2,70}', model):
         raise ValueError('SEMANTIK_GEMINI_MODEL debe contener un identificador de modelo Gemini válido.')
+    if model_choice and model_choice not in ('gemini-3.8-flash', 'gemini-3.5-flash-lite'):
+        raise ValueError('Elige uno de los modelos Gemini disponibles en la aplicación.')
+    if criterion_index is not None:
+        all_criteria = criteria_for(review)
+        if not 0 <= criterion_index < len(all_criteria):
+            raise ValueError('Elige un criterio válido antes de consultar Gemini.')
+        chosen = all_criteria[criterion_index]
+        review = {**review, 'inclusion': chosen['text'] if chosen['kind'] == 'inclusion' else '',
+                  'exclusion': chosen['text'] if chosen['kind'] == 'exclusion' else ''}
     criteria, passages, instructions, prompt = request_context(review, article, pages, context)
     try:
         with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
@@ -220,7 +229,7 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
                     'generationConfig': {'responseMimeType': 'application/json',
                                          'temperature': 0, 'maxOutputTokens': 4096}}
             response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
-            if response.status_code == 404 and not os.getenv('SEMANTIK_GEMINI_MODEL'):
+            if response.status_code == 404 and not model_choice and not os.getenv('SEMANTIK_GEMINI_MODEL'):
                 listing = client.get(GEMINI_MODELS_URL, headers=headers)
                 if listing.status_code == 200:
                     try:
@@ -272,8 +281,11 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
     safe_usage = {target: usage[source] for source, target in (
         ('promptTokenCount', 'prompt_tokens'), ('candidatesTokenCount', 'completion_tokens'),
         ('totalTokenCount', 'total_tokens')) if isinstance(usage.get(source), int) and usage[source] >= 0}
-    return checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
-                          'gemini', model, safe_usage)
+    result = checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
+                            'gemini', model, safe_usage)
+    if criterion_index is not None:
+        result['criterion_index'] = criterion_index
+    return result
 
 
 def generate_groq_review(review, article, pages, pdf_hash, criterion_index, context=None):
