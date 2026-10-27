@@ -171,6 +171,39 @@ def test_gemini_rejects_truncated_answer_and_status_reports_only_presence(monkey
     assert 'test-secret' not in str(status)
 
 
+def test_gemini_404_chooses_available_flash_model_without_exposing_key(monkeypatch):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GEMINI_API_KEY', 'test-secret')
+    monkeypatch.delenv('SEMANTIK_GEMINI_MODEL', raising=False)
+    requested = []
+    class FakeResponse:
+        def __init__(self, status_code, body): self.status_code, self.body = status_code, body
+        def json(self): return self.body
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, url, **kwargs):
+            requested.append(url)
+            if url.endswith('/gemini-2.5-flash:generateContent'):
+                return FakeResponse(404, {'error': {'message': 'PRIVATE_PROVIDER_MESSAGE'}})
+            return FakeResponse(200, {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [
+                {'text': json.dumps({'assessment': 'incierto', 'page': None, 'quote': '', 'explanation': 'Sin prueba'})}]}}]})
+        def get(self, url, **kwargs):
+            assert kwargs['headers']['x-goog-api-key'] == 'test-secret'
+            return FakeResponse(200, {'models': [
+                {'name': 'models/gemini-3-flash-preview', 'supportedGenerationMethods': ['generateContent']},
+                {'name': 'models/gemini-2.5-pro', 'supportedGenerationMethods': ['generateContent']}]})
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    result = llm_review.generate_gemini_review(
+        {'inclusion': 'Estudio empírico', 'exclusion': '', 'protocol_version': 3},
+        {'title': 'Study', 'doi': '10.1234/example'},
+        [{'page': 1, 'text': 'This study used a quantitative design with 60 university students.'}], 'hash')
+    assert requested[-1].endswith('/gemini-3-flash-preview:generateContent')
+    assert result['model'] == 'gemini-3-flash-preview'
+    assert 'test-secret' not in str(result)
+
+
 def test_groq_uses_exact_model_and_free_tier_output_cap(monkeypatch):
     from backend.app import llm_review
     monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')

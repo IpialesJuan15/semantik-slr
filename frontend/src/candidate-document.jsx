@@ -36,7 +36,7 @@ export function CandidateDocument({articleId,onSaved,review}){
  useEffect(()=>{
   const current=++scope.current
   setDocument(null);setSuggestion(null);setError('');setLlmError('');setPreview(null);setPreviewError('');setCriterionIndex(0);setWorking(false);setThinking(false);setLocating(false)
-  Promise.all([api(`/articles/${articleId}/document`),api(`/articles/${articleId}/document/llm-review`)]).then(([value,saved])=>{if(scope.current===current){setDocument(value);setSuggestion(saved);if(saved.status==='ready')setProvider(saved.provider==='gemini'?'gemini':saved.provider||'gemini')}}).catch(reason=>{if(scope.current===current)setError(reason.message)})
+  Promise.all([api(`/articles/${articleId}/document`),api(`/articles/${articleId}/document/llm-review`)]).then(([value,saved])=>{if(scope.current===current){setDocument(value);setSuggestion(saved);if(saved.status==='ready')setProvider(saved.provider==='cloud'?'gemini':saved.provider||'gemini')}}).catch(reason=>{if(scope.current===current)setError(reason.message)})
   api('/status').then(value=>{if(scope.current===current){setGeminiReady(value.gemini_key_configured);setGroqReady(value.groq_key_configured)}}).catch(()=>{})
   return()=>{scope.current++}
  },[articleId,review.protocol_version])
@@ -100,7 +100,7 @@ export function CandidateDocument({articleId,onSaved,review}){
     </div>
     <div className="pdf-reading-step">
      <h6>Explicación opcional</h6>
-     <label className="field"><span>Dónde procesar los pasajes</span><select value={provider} disabled={occupied} onChange={event=>{setProvider(event.target.value);setLlmError('')}}><option value="groq">Groq · qwen/qwen3.8-27b</option><option value="gemini">Gemini · gemini-2.5-flash</option><option value="local">En mi equipo · Ollama qwen2.5:3b</option></select></label>
+     <label className="field"><span>Dónde procesar los pasajes</span><select value={provider} disabled={occupied} onChange={event=>{setProvider(event.target.value);setLlmError('')}}><option value="groq">Groq · qwen/qwen3.8-27b</option><option value="gemini">Gemini · modelo Flash disponible</option><option value="local">En mi equipo · Ollama qwen2.5:3b</option></select></label>
      <p className="pdf-help">{provider==='groq'?'Groq recibe título, DOI, el criterio y pasajes del PDF. Analiza un criterio por solicitud; el plan gratuito tiene límites.':provider==='gemini'?'Gemini recibe título, DOI, criterios y pasajes seleccionados del PDF. Consulta los límites y posibles costos de tu proyecto en Google AI Studio.':'Ollama analiza todos los criterios en tu equipo. Requiere qwen2.5:3b; con 8 GB puede tardar varios minutos.'} {provider!=='local'&&'El PDF completo no se envía.'}</p>
      {((provider==='groq'&&groqReady===false)||(provider==='gemini'&&geminiReady===false))&&<p className="document-warning">Configura {provider==='groq'?'SEMANTIK_GROQ_API_KEY':'SEMANTIK_GEMINI_API_KEY'} en la terminal y reinicia la aplicación. No compartas la clave.</p>}
      <button className="primary" type="button" disabled={occupied||!canRead||!criteria.length||(provider==='groq'&&(waitSeconds>0||groqReady===false))||(provider==='gemini'&&geminiReady===false)} onClick={reviewPdf}>{thinking?'Preparando explicación…':provider==='groq'?(waitSeconds>0?`Disponible en ${waitSeconds} s`:'Buscar evidencia y explicar con Groq'):provider==='gemini'?'Explicar los criterios con Gemini':'Explicar los criterios con Ollama'}</button>

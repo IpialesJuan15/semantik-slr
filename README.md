@@ -93,7 +93,7 @@ set "SEMANTIK_GEMINI_API_KEY=TU_CLAVE_REAL"
 iniciar.bat
 ```
 
-En `http://127.0.0.1:8000/api/status`, `gemini_key_configured` debe indicar `true`. Abre un candidato con PDF leído, selecciona **Gemini · gemini-2.5-flash** y pulsa **Explicar los criterios con Gemini**. Se envían título, DOI, criterios y pasajes seleccionados con páginas; no se envía el archivo PDF completo. Comprueba las citas e interpretaciones antes de tomar tu decisión. La clave vive solo en esa sesión de CMD; si cierras la ventana, vuelve a configurarla al arrancar. El servidor nunca devuelve su valor. Los resultados históricos de OpenAI conservan su procedencia, pero ya no se pueden crear solicitudes nuevas a OpenAI.
+En `http://127.0.0.1:8000/api/status`, `gemini_key_configured` debe indicar `true`. Abre un candidato con PDF leído, selecciona **Gemini · modelo Flash disponible** y pulsa **Explicar los criterios con Gemini**. Se envían título, DOI, criterios y pasajes seleccionados con páginas; no se envía el archivo PDF completo. Comprueba las citas e interpretaciones antes de tomar tu decisión. La clave vive solo en esa sesión de CMD; si cierras la ventana, vuelve a configurarla al arrancar. El servidor nunca devuelve su valor. Si Google devuelve 404 para el modelo inicial, Semantik consulta los modelos Flash disponibles para tu proyecto y reintenta una vez. El resultado muestra el modelo exacto. Los resultados históricos de OpenAI conservan su procedencia, pero ya no se pueden crear solicitudes nuevas a OpenAI.
 
 ## Probar GroqCloud con el plan gratuito
 

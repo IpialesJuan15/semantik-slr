@@ -12,7 +12,8 @@ from .pdf_retrieval import EMPIRICAL_CRITERION, EMPIRICAL_METHOD, EMPIRICAL_NONS
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
 GEMINI_MODEL = 'gemini-2.5-flash'
-GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
+GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
+GEMINI_URL = f'{GEMINI_MODELS_URL}/{GEMINI_MODEL}:generateContent'
 GROQ_MODEL = 'qwen/qwen3.8-27b'
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 MAX_CRITERIA = 12
@@ -206,16 +207,34 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
     key = os.getenv('SEMANTIK_GEMINI_API_KEY', '').strip()
     if not key:
         raise ValueError('Falta SEMANTIK_GEMINI_API_KEY. Configura tu clave de Google AI Studio en la terminal que inicia la aplicación; no la pegues en el chat.')
+    model = os.getenv('SEMANTIK_GEMINI_MODEL', GEMINI_MODEL).strip()
+    if not re.fullmatch(r'gemini-[a-z0-9.-]{2,70}', model):
+        raise ValueError('SEMANTIK_GEMINI_MODEL debe contener un identificador de modelo Gemini válido.')
     criteria, passages, instructions, prompt = request_context(review, article, pages, context)
     try:
         with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
-            response = client.post(GEMINI_URL,
-                headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
-                json={'systemInstruction': {'parts': [{'text': instructions}]},
-                      'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
-                      'generationConfig': {'responseMimeType': 'application/json',
-                                           'temperature': 0, 'maxOutputTokens': 4096,
-                                           'thinkingConfig': {'thinkingBudget': 512}}})
+            headers = {'x-goog-api-key': key, 'Content-Type': 'application/json'}
+            body = {'systemInstruction': {'parts': [{'text': instructions}]},
+                    'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+                    'generationConfig': {'responseMimeType': 'application/json',
+                                         'temperature': 0, 'maxOutputTokens': 4096,
+                                         'thinkingConfig': {'thinkingBudget': 512}}}
+            response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
+            if response.status_code == 404 and not os.getenv('SEMANTIK_GEMINI_MODEL'):
+                listing = client.get(GEMINI_MODELS_URL, headers=headers)
+                if listing.status_code == 200:
+                    try:
+                        available = [item['name'].removeprefix('models/') for item in listing.json()['models']
+                                     if 'generateContent' in item.get('supportedGenerationMethods', [])
+                                     and re.fullmatch(r'models/gemini-[a-z0-9.-]{2,70}', item.get('name', ''))]
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        available = []
+                    flash = [name for name in available if '-flash' in name and name != model
+                             and 'image' not in name and 'live' not in name and 'audio' not in name]
+                    flash.sort(key=lambda name: ('lite' in name, 'preview' in name, '-3-' not in name, name))
+                    if flash:
+                        model = flash[0]
+                        response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
     except httpx.TimeoutException:
         raise ValueError('Gemini tardó demasiado. Vuelve a intentar más tarde.') from None
     except httpx.HTTPError:
@@ -227,7 +246,7 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
         wait = f' Espera {delay} segundos.' if delay.isdigit() and 0 < int(delay) <= 3600 else ' Espera y vuelve a intentarlo.'
         raise ValueError('Gemini alcanzó el límite de solicitudes o tokens de tu proyecto.' + wait + ' Revisa Uso y límites en Google AI Studio.')
     if response.status_code == 404:
-        raise ValueError('El modelo Gemini elegido no está disponible para tu proyecto. Comprueba el acceso al modelo en Google AI Studio.')
+        raise ValueError('Google no encontró un modelo Gemini Flash compatible con tu proyecto. Comprueba los modelos disponibles en Google AI Studio o configura SEMANTIK_GEMINI_MODEL con un identificador válido.')
     if response.status_code == 400:
         raise ValueError('Gemini rechazó la solicitud. Comprueba el acceso y los límites del modelo en Google AI Studio; no se guardó ninguna propuesta.')
     if response.status_code != 200:
@@ -248,7 +267,7 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
         ('promptTokenCount', 'prompt_tokens'), ('candidatesTokenCount', 'completion_tokens'),
         ('totalTokenCount', 'total_tokens')) if isinstance(usage.get(source), int) and usage[source] >= 0}
     return checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
-                          'gemini', GEMINI_MODEL, safe_usage)
+                          'gemini', model, safe_usage)
 
 
 def generate_groq_review(review, article, pages, pdf_hash, criterion_index, context=None):
