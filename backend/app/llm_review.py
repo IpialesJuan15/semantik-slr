@@ -11,8 +11,8 @@ from .pdf_retrieval import EMPIRICAL_CRITERION, EMPIRICAL_METHOD, EMPIRICAL_NONS
 
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
-CLOUD_MODEL = 'gpt-4.1-mini'
-CLOUD_URL = 'https://api.openai.com/v1/chat/completions'
+GEMINI_MODEL = 'gemini-2.5-flash'
+GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent'
 GROQ_MODEL = 'qwen/qwen3.8-27b'
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 MAX_CRITERIA = 12
@@ -202,51 +202,53 @@ def generate_local_review(review, article, pages, pdf_hash, context=None):
     return checked_result(raw_text, criteria, passages, pages, review, pdf_hash, 'local', MODEL)
 
 
-def generate_cloud_review(review, article, pages, pdf_hash, context=None):
-    key = os.getenv('SEMANTIK_OPENAI_API_KEY', '').strip()
+def generate_gemini_review(review, article, pages, pdf_hash, context=None):
+    key = os.getenv('SEMANTIK_GEMINI_API_KEY', '').strip()
     if not key:
-        raise ValueError('Falta SEMANTIK_OPENAI_API_KEY. Configura tu clave en la terminal que inicia la aplicación; no la pegues en el chat.')
+        raise ValueError('Falta SEMANTIK_GEMINI_API_KEY. Configura tu clave de Google AI Studio en la terminal que inicia la aplicación; no la pegues en el chat.')
     criteria, passages, instructions, prompt = request_context(review, article, pages, context)
     try:
         with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
-            response = client.post(CLOUD_URL,
-                headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
-                json={'model': CLOUD_MODEL, 'messages': [
-                    {'role': 'system', 'content': instructions},
-                    {'role': 'user', 'content': prompt}],
-                    'response_format': {'type': 'json_object'},
-                    'temperature': 0, 'max_completion_tokens': 2200})
+            response = client.post(GEMINI_URL,
+                headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
+                json={'systemInstruction': {'parts': [{'text': instructions}]},
+                      'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+                      'generationConfig': {'responseMimeType': 'application/json',
+                                           'temperature': 0, 'maxOutputTokens': 4096,
+                                           'thinkingConfig': {'thinkingBudget': 512}}})
     except httpx.TimeoutException:
-        raise ValueError('El LLM en la nube tardó demasiado. Vuelve a intentar más tarde.') from None
+        raise ValueError('Gemini tardó demasiado. Vuelve a intentar más tarde.') from None
     except httpx.HTTPError:
-        raise ValueError('No se pudo conectar con el LLM en la nube. Comprueba Internet y vuelve a intentar.') from None
+        raise ValueError('No se pudo conectar con Gemini. Comprueba Internet y vuelve a intentar.') from None
     if response.status_code in (401, 403):
-        raise ValueError('La API rechazó la clave o el acceso al modelo. Revisa tu cuenta y la clave configurada.')
+        raise ValueError('Gemini rechazó la clave o el acceso al modelo. Revisa la clave y el proyecto en Google AI Studio.')
     if response.status_code == 429:
-        try:
-            error = response.json().get('error') or {}
-            code = str(error.get('code') or error.get('type') or '').casefold()
-        except (ValueError, TypeError, AttributeError):
-            code = ''
-        if code in ('insufficient_quota', 'billing_hard_limit_reached', 'billing_not_active'):
-            raise ValueError('Tu cuenta de API no tiene cuota o presupuesto disponible. Revisa Facturación y Límites en platform.openai.com. La suscripción de ChatGPT no incluye saldo para la API.')
-        if code == 'rate_limit_exceeded':
-            delay = response.headers.get('Retry-After', '')
-            wait = f' Espera {delay} segundos antes de repetir.' if delay.isdigit() and 0 < int(delay) <= 3600 else ' Espera unos minutos antes de repetir.'
-            raise ValueError('La API alcanzó un límite temporal de solicitudes.' + wait)
-        raise ValueError('OpenAI respondió 429. Puede faltar cuota de API o haber un límite temporal. Revisa Facturación, Uso y Límites en platform.openai.com antes de repetir.')
+        delay = response.headers.get('Retry-After', '')
+        wait = f' Espera {delay} segundos.' if delay.isdigit() and 0 < int(delay) <= 3600 else ' Espera y vuelve a intentarlo.'
+        raise ValueError('Gemini alcanzó el límite de solicitudes o tokens de tu proyecto.' + wait + ' Revisa Uso y límites en Google AI Studio.')
+    if response.status_code == 404:
+        raise ValueError('El modelo Gemini elegido no está disponible para tu proyecto. Comprueba el acceso al modelo en Google AI Studio.')
+    if response.status_code == 400:
+        raise ValueError('Gemini rechazó la solicitud. Comprueba el acceso y los límites del modelo en Google AI Studio; no se guardó ninguna propuesta.')
     if response.status_code != 200:
-        raise ValueError(f'La API del LLM respondió {response.status_code}. No se guardó ninguna propuesta.')
+        raise ValueError(f'Gemini respondió {response.status_code}. No se guardó ninguna propuesta.')
     try:
         payload = response.json()
-        raw_text = payload['choices'][0]['message']['content']
-        usage = payload.get('usage') or {}
-    except (ValueError, KeyError, IndexError, TypeError):
-        raise ValueError('La API devolvió una respuesta no reconocida. No se guardó ninguna propuesta.') from None
-    safe_usage = {field: int(usage[field]) for field in ('prompt_tokens', 'completion_tokens', 'total_tokens')
-                  if isinstance(usage.get(field), int) and usage[field] >= 0}
+        candidate = payload['candidates'][0]
+        finish_reason = candidate.get('finishReason')
+        raw_text = ''.join(part['text'] for part in candidate['content']['parts']
+                           if isinstance(part, dict) and not part.get('thought') and isinstance(part.get('text'), str))
+        usage = payload.get('usageMetadata') or {}
+        if not isinstance(usage, dict): raise TypeError()
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        raise ValueError('Gemini devolvió una respuesta no reconocida. No se guardó ninguna propuesta.') from None
+    if finish_reason not in (None, 'STOP'):
+        raise ValueError('Gemini no terminó la respuesta. Vuelve a intentarlo o revisa el PDF manualmente.')
+    safe_usage = {target: usage[source] for source, target in (
+        ('promptTokenCount', 'prompt_tokens'), ('candidatesTokenCount', 'completion_tokens'),
+        ('totalTokenCount', 'total_tokens')) if isinstance(usage.get(source), int) and usage[source] >= 0}
     return checked_result(raw_text, criteria, passages, pages, review, pdf_hash,
-                          'cloud', CLOUD_MODEL, safe_usage)
+                          'gemini', GEMINI_MODEL, safe_usage)
 
 
 def generate_groq_review(review, article, pages, pdf_hash, criterion_index, context=None):

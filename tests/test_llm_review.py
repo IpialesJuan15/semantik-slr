@@ -62,37 +62,38 @@ def test_llm_suggestion_is_separate_from_human_decision_and_protocol_version(tmp
         assert result.status_code == 200 and result.json()['status'] == 'ready'
         assert client.get(f'/api/articles/{aid}/document/llm-review').json()['model'] == 'test-model'
         assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
-        monkeypatch.setattr(main, 'generate_cloud_review', lambda review, article, pages, sha:
-                            {**fake_review(review, article, pages, sha), 'provider': 'cloud', 'model': 'fake-cloud'})
-        cloud = client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'cloud'})
-        assert cloud.status_code == 200 and cloud.json()['provider'] == 'cloud'
-        assert client.get(f'/api/articles/{aid}/document/llm-review').json()['model'] == 'fake-cloud'
+        monkeypatch.setattr(main, 'generate_gemini_review', lambda review, article, pages, sha:
+                            {**fake_review(review, article, pages, sha), 'provider': 'gemini', 'model': 'fake-gemini'})
+        gemini = client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'gemini'})
+        assert gemini.status_code == 200 and gemini.json()['provider'] == 'gemini'
+        assert client.get(f'/api/articles/{aid}/document/llm-review').json()['model'] == 'fake-gemini'
+        assert client.post(f'/api/articles/{aid}/document/llm-review', json={'provider': 'cloud'}).status_code == 422
         review['inclusion'] = 'Empirical study in Latin America'
         assert client.put(f'/api/reviews/{rid}', json=review).status_code == 200
         assert client.get(f'/api/articles/{aid}/document/llm-review').json() == {'status': 'missing'}
 
 
-def test_cloud_request_sends_selected_passages_and_checks_quotes(monkeypatch):
+def test_gemini_request_sends_selected_passages_and_checks_quotes(monkeypatch):
     from backend.app import llm_review
-    monkeypatch.delenv('SEMANTIK_OPENAI_API_KEY', raising=False)
+    monkeypatch.delenv('SEMANTIK_GEMINI_API_KEY', raising=False)
     review = {'inclusion': 'Estudio empírico en América Latina', 'exclusion': 'Fuera de América Latina', 'protocol_version': 3}
     article = {'title': 'Candidate study', 'doi': '10.1234/example'}
     pages = [{'page': 1, 'text': 'A published empirical study of Saudi postgraduate students at King Faisal University.' * 30}]
-    with pytest.raises(ValueError, match='SEMANTIK_OPENAI_API_KEY'):
-        llm_review.generate_cloud_review(review, article, pages, 'hash')
-    monkeypatch.setenv('SEMANTIK_OPENAI_API_KEY', 'test-secret')
+    with pytest.raises(ValueError, match='SEMANTIK_GEMINI_API_KEY'):
+        llm_review.generate_gemini_review(review, article, pages, 'hash')
+    monkeypatch.setenv('SEMANTIK_GEMINI_API_KEY', 'test-secret')
     captured = {}
     class FakeResponse:
         status_code = 200
         def json(self):
-            return {'choices': [{'message': {'content': json.dumps({'items': [
+            return {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'text': json.dumps({'items': [
                 {'index': 0, 'assessment': 'contradice', 'page': 1,
                  'quote': 'Saudi postgraduate students at King Faisal University',
                  'explanation': 'El estudio está fuera de América Latina.'},
                 {'index': 1, 'assessment': 'apoya', 'page': 1,
                  'quote': 'This quote is absent from the PDF text entirely',
-                 'explanation': 'No debe mostrarse.'}]})}}],
-                    'usage': {'prompt_tokens': 450, 'completion_tokens': 180, 'total_tokens': 630}}
+                 'explanation': 'No debe mostrarse.'}]})}]}}],
+                    'usageMetadata': {'promptTokenCount': 450, 'candidatesTokenCount': 180, 'totalTokenCount': 630}}
     class FakeClient:
         def __init__(self, **kwargs): pass
         def __enter__(self): return self
@@ -101,32 +102,33 @@ def test_cloud_request_sends_selected_passages_and_checks_quotes(monkeypatch):
             captured.update({'url': url, **kwargs})
             return FakeResponse()
     monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
-    result = llm_review.generate_cloud_review(review, article, pages, 'hash')
-    assert captured['url'] == llm_review.CLOUD_URL
-    assert captured['headers']['Authorization'] == 'Bearer test-secret'
-    sent = json.loads(captured['json']['messages'][1]['content'])
+    result = llm_review.generate_gemini_review(review, article, pages, 'hash')
+    assert captured['url'] == llm_review.GEMINI_URL
+    assert captured['headers']['x-goog-api-key'] == 'test-secret'
+    assert 'test-secret' not in captured['url']
+    assert captured['json']['generationConfig']['responseMimeType'] == 'application/json'
+    sent = json.loads(captured['json']['contents'][0]['parts'][0]['text'])
     assert set(sent) == {'article', 'criteria', 'pdf_passages'}
     assert sum(len(p['text']) for p in sent['pdf_passages']) <= 12 * 900
-    assert result['provider'] == 'cloud' and result['model'] == llm_review.CLOUD_MODEL
+    assert result['provider'] == 'gemini' and result['model'] == llm_review.GEMINI_MODEL
     assert result['usage']['total_tokens'] == 630
     assert result['criteria'][0]['quote_verified'] is True
     assert result['criteria'][1]['quote_verified'] is False
     assert 'No debe mostrarse' not in result['criteria'][1]['explanation']
 
 
-@pytest.mark.parametrize(('code', 'retry_after', 'expected'), [
-    ('insufficient_quota', '', 'Facturación y Límites'),
-    ('rate_limit_exceeded', '30', 'Espera 30 segundos'),
-    ('', '', 'Puede faltar cuota'),
+@pytest.mark.parametrize(('retry_after', 'expected'), [
+    ('30', 'Espera 30 segundos'),
+    ('', 'Revisa Uso y límites'),
 ])
-def test_cloud_429_explains_known_cause_without_echoing_provider_message(monkeypatch, code, retry_after, expected):
+def test_gemini_429_explains_limit_without_echoing_provider_message(monkeypatch, retry_after, expected):
     from backend.app import llm_review
-    monkeypatch.setenv('SEMANTIK_OPENAI_API_KEY', 'test-secret')
+    monkeypatch.setenv('SEMANTIK_GEMINI_API_KEY', 'test-secret')
     class FakeResponse:
         status_code = 429
         headers = {'Retry-After': retry_after}
         def json(self):
-            return {'error': {'code': code, 'message': 'PRIVATE_PROVIDER_MESSAGE'}}
+            return {'error': {'message': 'PRIVATE_PROVIDER_MESSAGE'}}
     class FakeClient:
         def __init__(self, **kwargs): pass
         def __enter__(self): return self
@@ -137,10 +139,36 @@ def test_cloud_429_explains_known_cause_without_echoing_provider_message(monkeyp
     article = {'title': 'Candidate', 'doi': '10.1234/example'}
     pages = [{'page': 1, 'text': 'Empirical study with university students in Latin America.'}]
     with pytest.raises(ValueError) as caught:
-        llm_review.generate_cloud_review(review, article, pages, 'hash')
+        llm_review.generate_gemini_review(review, article, pages, 'hash')
     assert expected in str(caught.value)
     assert 'PRIVATE_PROVIDER_MESSAGE' not in str(caught.value)
     assert 'test-secret' not in str(caught.value)
+
+
+def test_gemini_rejects_truncated_answer_and_status_reports_only_presence(monkeypatch, tmp_path):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GEMINI_API_KEY', 'test-secret')
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {'candidates': [{'finishReason': 'MAX_TOKENS', 'content': {'parts': [
+                {'text': '{"items": []}'}]}}]}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    with pytest.raises(ValueError, match='no terminó'):
+        llm_review.generate_gemini_review(
+            {'inclusion': 'Estudio empírico', 'exclusion': '', 'protocol_version': 3},
+            {'title': 'Study', 'doi': '10.1234/example'},
+            [{'page': 1, 'text': 'A quantitative study enrolled 60 university students.'}], 'hash')
+    with TestClient(create_app(tmp_path / 'status.sqlite3')) as client:
+        status = client.get('/api/status').json()
+    assert status['gemini_key_configured'] is True
+    assert 'cloud_llm_configured' not in status
+    assert 'test-secret' not in str(status)
 
 
 def test_groq_uses_exact_model_and_free_tier_output_cap(monkeypatch):

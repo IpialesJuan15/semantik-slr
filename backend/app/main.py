@@ -20,7 +20,7 @@ from .analysis import analyze, MODEL
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
 from .pdf_retrieval import retrieve_passages
-from .llm_review import GROQ_MODEL, criteria_for, generate_cloud_review, generate_groq_review, generate_local_review
+from .llm_review import GROQ_MODEL, criteria_for, generate_gemini_review, generate_groq_review, generate_local_review
 from .published import DOI as PUBLISHED_DOI, template as published_template, update_inclusion
 from .sources import SourceLimitError, identity, normalize_doi, search_doaj, search_openalex
 from .storage import article_json, connect, event, initialize
@@ -83,7 +83,7 @@ class AnalysisInput(BaseModel):
 
 class LLMReviewInput(BaseModel):
     retrieval: Literal['semantic', 'lexical', 'legacy'] = 'legacy'
-    provider: Literal['local', 'cloud', 'groq'] = 'local'
+    provider: Literal['local', 'gemini', 'groq'] = 'local'
     criterion_index: int | None = Field(default=None, ge=0, le=11)
 
 class PublishedInput(BaseModel):
@@ -125,7 +125,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.17.1', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.18.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -211,7 +211,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'cloud_llm_configured':bool(os.getenv('SEMANTIK_OPENAI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.17.1'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'gemini_key_configured':bool(os.getenv('SEMANTIK_GEMINI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.18.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -421,7 +421,7 @@ def create_app(database_path=None):
             if payload.provider == 'groq':
                 result = generate_groq_review(review, article, pages, document['sha256'], payload.criterion_index, **options)
             else:
-                generator = generate_cloud_review if payload.provider == 'cloud' else generate_local_review
+                generator = generate_gemini_review if payload.provider == 'gemini' else generate_local_review
                 result = generator(review, article, pages, document['sha256'], **options)
             if context:
                 result['retrieval'] = context['retrieval']

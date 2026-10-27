@@ -36,7 +36,7 @@ La versión 0.8 añadió **Texto completo** al expediente del candidato. **Busca
 
 La versión 0.9 añade un **asistente experimental con LLM local** que examina pasajes seleccionados de todas las páginas extraídas y propone una explicación por criterio. Cada cita se comprueba contra la página declarada: si no aparece, se oculta la explicación y el criterio queda incierto. La presencia textual no valida la interpretación ni la elegibilidad. El investigador conserva la decisión final. Las propuestas se guardan con modelo, hash del PDF y versión del protocolo; quedan obsoletas si cambia cualquiera de los dos. El informe y la clasificación semántica anterior aún no usan estas propuestas. Se reparan en la presentación algunos glifos numéricos de PDFs, como `/one.tnum` → `1`.
 
-La versión 0.10 permite elegir en el expediente entre **OpenAI en la nube (`gpt-4.1-mini`)** y **Ollama local (`qwen2.5:3b`)**. Ambos comparten la selección de pasajes y la verificación de citas. Al elegir nube y pulsar generar se envían título, DOI, criterios y hasta doce pasajes con su número de página a OpenAI; **no se envía el PDF completo**. La respuesta guarda proveedor, modelo y uso de tokens cuando la API lo informa. La clave se lee solo de `SEMANTIK_OPENAI_API_KEY` al arrancar el servidor; no se escribe en la base, reportes, historial ni interfaz. La API puede tener costo por uso y requiere una cuenta de API con acceso al modelo, distinta de una suscripción de ChatGPT. Esta integración se verificó con respuestas simuladas, no con una clave real en este entorno.
+La versión 0.18 usa **Gemini `gemini-2.5-flash`** como opción de nube junto a Groq y Ollama local. Solo se envían título, DOI, criterios y pasajes seleccionados con sus páginas al pulsar el botón; el PDF completo permanece local. La clave `SEMANTIK_GEMINI_API_KEY` se lee en el servidor y nunca se guarda en la base o los reportes. La respuesta conserva proveedor, modelo y uso de tokens cuando la API lo informa. Los resultados de OpenAI de versiones anteriores siguen atribuidos a ese proveedor, pero OpenAI ya no puede recibir solicitudes nuevas. La integración con Gemini se verificó con respuestas controladas; la prueba real requiere la clave del investigador.
 
 La versión 0.10.1 distingue, cuando la API informa la causa, un **429 por cuota o presupuesto insuficiente** de un **límite temporal de solicitudes**. No muestra el mensaje completo del proveedor para evitar incluir datos sensibles. Ante falta de cuota, comprueba Facturación y Límites de tu cuenta de API; esperar por sí solo no añade saldo.
 
@@ -54,7 +54,7 @@ El filtro de fechas de **Buscar más estudios** se aplica a la siguiente consult
 2. Pulsa **Revisar el siguiente**. La lista de lectura y el detalle aparecen juntos en escritorio. En móvil, al elegir un candidato se abre su detalle más abajo.
 3. Comprueba título, resumen, DOI/enlace y fragmentos contra los criterios de la revisión. El puntaje solo ordena la lectura: no decide por ti. Si el artículo es del primer o último año del intervalo, confirma su fecha exacta en la fuente.
    En **Texto completo**, pulsa **Buscar PDF abierto por DOI**. Si falla, abre la fuente y usa **Adjuntar PDF** cuando dispongas de una copia autorizada. Verifica título y DOI en el PDF; el estado «PDF leído» solo acredita extracción de texto, no elegibilidad.
-   Elige **OpenAI en la nube** u **Ollama en mi equipo** y pulsa **Generar con OpenAI** o **Generar con Ollama**. Abre el PDF y coteja la página, la cita y la interpretación de cada criterio antes de guardar tu propia decisión.
+   Elige **Gemini**, **Groq** u **Ollama en mi equipo** y pulsa el botón de explicación correspondiente. Abre el PDF y coteja la página, la cita y la interpretación de cada criterio antes de guardar tu propia decisión.
 4. Selecciona **Incluido**, **Excluido** o **Pendiente**, escribe el motivo y pulsa **Guardar decisión**. La aplicación abre el siguiente candidato pendiente cuando corresponde.
 5. Cuando termines, abre **Informes** y genera una versión. Para añadir más candidatos, usa **Buscar más estudios** en la misma pantalla. No necesitas crear otra revisión ni volver a cargar el PDF.
 
@@ -84,16 +84,16 @@ ollama list
 
 Después reinicia `iniciar.bat`, abre un candidato con PDF leído, elige **Ollama en mi equipo** y pulsa **Generar con Ollama**. No se requiere API key ni se envía el PDF a un proveedor en la nube: la aplicación llama a Ollama en `127.0.0.1:11434`. La descarga inicial del modelo requiere Internet y varios gigabytes libres en disco; en un equipo de 8 GB de RAM la inferencia puede tardar minutos. Si Ollama no responde, comprueba que la aplicación esté abierta. Esta integración se probó con respuestas controladas, **no** con inferencia real en este entorno ni con una evaluación científica de calidad. La aplicación inspecciona todas las páginas para seleccionar hasta 12 pasajes: por límites de contexto y memoria, el modelo no recibe las 16 páginas completas en una sola petición. Las citas exactas se validan, pero la selección puede omitir evidencia y las interpretaciones pueden ser erróneas.
 
-## Activar el asistente LLM en la nube (opcional)
+## Usar Gemini de Google AI Studio (opcional)
 
-Obtén una clave de API en https://platform.openai.com/api-keys y revisa los límites y costos de tu cuenta. **No pegues la clave en el chat ni la guardes en el repositorio.** En CMD, dentro del proyecto, detén primero la aplicación con Ctrl+C y ejecuta en la **misma terminal**:
+La aplicación usa `gemini-2.5-flash`, elegido por su equilibrio entre capacidad y uso práctico para explicar los criterios con pasajes. La disponibilidad, los límites y los costos dependen de tu proyecto en Google AI Studio; compruébalos allí antes de usarlo. **No pegues la clave en el chat ni la guardes en el repositorio.** En CMD, dentro del proyecto, detén la aplicación con Ctrl+C y ejecuta en la **misma ventana**:
 
 ```bat
-set "SEMANTIK_OPENAI_API_KEY=TU_CLAVE_REAL"
+set "SEMANTIK_GEMINI_API_KEY=TU_CLAVE_REAL"
 iniciar.bat
 ```
 
-Abre un candidato con PDF leído, elige **OpenAI en la nube** y pulsa **Generar con OpenAI**. Solo la pulsación de ese botón envía pasajes a OpenAI. El servidor no muestra el valor de la clave, únicamente si está configurada. Al cerrar esa ventana de CMD, la variable deja de estar disponible para nuevas sesiones. Si prefieres no usar una API, elige Ollama local. No hay un precio fijo por artículo: depende de los tokens y de la tarifa vigente del proveedor; la app muestra los tokens informados por la respuesta.
+En `http://127.0.0.1:8000/api/status`, `gemini_key_configured` debe indicar `true`. Abre un candidato con PDF leído, selecciona **Gemini · gemini-2.5-flash** y pulsa **Explicar los criterios con Gemini**. Se envían título, DOI, criterios y pasajes seleccionados con páginas; no se envía el archivo PDF completo. Comprueba las citas e interpretaciones antes de tomar tu decisión. La clave vive solo en esa sesión de CMD; si cierras la ventana, vuelve a configurarla al arrancar. El servidor nunca devuelve su valor. Los resultados históricos de OpenAI conservan su procedencia, pero ya no se pueden crear solicitudes nuevas a OpenAI.
 
 ## Probar GroqCloud con el plan gratuito
 
@@ -104,7 +104,7 @@ set "SEMANTIK_GROQ_API_KEY=TU_CLAVE_REAL"
 iniciar.bat
 ```
 
-En un candidato con PDF leído, elige **Groq · qwen/qwen3.8-27b**, selecciona el criterio de América Latina y pulsa **Analizar este criterio con Groq**. Revisa la cita y la página antes de usar la propuesta. Para otro criterio, selecciónalo y vuelve a pulsar el botón; si Groq informa límite 429, espera al menos un minuto. Los límites gratuitos pertenecen a tu organización Groq y pueden cambiar; la aplicación no promete análisis ilimitado ni exige subir a un plan de pago. No uses tu clave Groq en `SEMANTIK_OPENAI_API_KEY`: son servicios distintos.
+En un candidato con PDF leído, elige **Groq · qwen/qwen3.8-27b**, selecciona el criterio de América Latina y pulsa **Analizar este criterio con Groq**. Revisa la cita y la página antes de usar la propuesta. Para otro criterio, selecciónalo y vuelve a pulsar el botón; si Groq informa límite 429, espera al menos un minuto. Los límites gratuitos pertenecen a tu organización Groq y pueden cambiar; la aplicación no promete análisis ilimitado ni exige subir a un plan de pago. La clave de Groq y la de Gemini son diferentes; configura cada una en su propia variable.
 
 ## Qué puedes probar
 
@@ -127,7 +127,7 @@ Formato CSV/JSON: `title` obligatorio; opcionales `abstract`, `doi`, `year`, `au
 - DOAJ: búsqueda de metadatos en revistas de acceso abierto mediante su API pública. Se puede seleccionar en la interfaz cuando OpenAlex esté limitado. La consulta restringe los años antes de paginar y comprueba los meses conocidos en ambos extremos. Si DOAJ informa solo el año, verifica el mes y el día en el artículo antes de incluirlo. Las dos fuentes se consultan por separado y se registra la procedencia.
 - Hugging Face: descarga inicial del modelo fijado; después la inferencia es local.
 - PDFs candidatos: OpenAlex localiza versiones abiertas por DOI. La descarga final depende del sitio de la revista o repositorio y puede fallar por red, redirecciones o ausencia de un PDF legible; entonces se permite adjuntarlo.
-- LLM generativo: GroqCloud opcional con límite gratuito de la cuenta, OpenAI opcional con posible costo, y Ollama/qwen2.5:3b local. Zenodo todavía no está integrado.
+- LLM generativo: GroqCloud y Gemini opcionales, sujetos a los límites de cada cuenta, y Ollama/qwen2.5:3b local. Zenodo todavía no está integrado.
 
 ## Desarrollo del frontend
 
