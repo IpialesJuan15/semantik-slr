@@ -185,7 +185,7 @@ def test_gemini_404_chooses_available_flash_model_without_exposing_key(monkeypat
         def __exit__(self, *args): pass
         def post(self, url, **kwargs):
             requested.append(url)
-            if url.endswith('/gemini-2.5-flash:generateContent'):
+            if url.endswith('/gemini-3.8-flash:generateContent'):
                 return FakeResponse(404, {'error': {'message': 'PRIVATE_PROVIDER_MESSAGE'}})
             return FakeResponse(200, {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [
                 {'text': json.dumps({'assessment': 'incierto', 'page': None, 'quote': '', 'explanation': 'Sin prueba'})}]}}]})

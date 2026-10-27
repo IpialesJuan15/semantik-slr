@@ -11,7 +11,7 @@ from .pdf_retrieval import EMPIRICAL_CRITERION, EMPIRICAL_METHOD, EMPIRICAL_NONS
 
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
-GEMINI_MODEL = 'gemini-2.5-flash'
+GEMINI_MODEL = 'gemini-3.8-flash'
 GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 GEMINI_URL = f'{GEMINI_MODELS_URL}/{GEMINI_MODEL}:generateContent'
 GROQ_MODEL = 'qwen/qwen3.8-27b'
@@ -217,8 +217,7 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
             body = {'systemInstruction': {'parts': [{'text': instructions}]},
                     'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
                     'generationConfig': {'responseMimeType': 'application/json',
-                                         'temperature': 0, 'maxOutputTokens': 4096,
-                                         'thinkingConfig': {'thinkingBudget': 512}}}
+                                         'temperature': 0, 'maxOutputTokens': 4096}}
             response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
             if response.status_code == 404 and not os.getenv('SEMANTIK_GEMINI_MODEL'):
                 listing = client.get(GEMINI_MODELS_URL, headers=headers)
