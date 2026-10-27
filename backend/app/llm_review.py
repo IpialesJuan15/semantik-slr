@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 
 import httpx
 
@@ -234,6 +235,10 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
                     if flash:
                         model = flash[0]
                         response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
+            if response.status_code == 503:
+                delay = getattr(response, 'headers', {}).get('Retry-After', '')
+                time.sleep(min(int(delay), 8) if delay.isdigit() and int(delay) > 0 else 2)
+                response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers=headers, json=body)
     except httpx.TimeoutException:
         raise ValueError('Gemini tardó demasiado. Vuelve a intentar más tarde.') from None
     except httpx.HTTPError:
@@ -248,6 +253,8 @@ def generate_gemini_review(review, article, pages, pdf_hash, context=None):
         raise ValueError('Google no encontró un modelo Gemini Flash compatible con tu proyecto. Comprueba los modelos disponibles en Google AI Studio o configura SEMANTIK_GEMINI_MODEL con un identificador válido.')
     if response.status_code == 400:
         raise ValueError('Gemini rechazó la solicitud. Comprueba el acceso y los límites del modelo en Google AI Studio; no se guardó ninguna propuesta.')
+    if response.status_code == 503:
+        raise ValueError('Gemini sigue temporalmente ocupado después de un reintento. Espera unos minutos o usa Groq mientras tanto. No se guardó ninguna propuesta.')
     if response.status_code != 200:
         raise ValueError(f'Gemini respondió {response.status_code}. No se guardó ninguna propuesta.')
     try:

@@ -204,6 +204,40 @@ def test_gemini_404_chooses_available_flash_model_without_exposing_key(monkeypat
     assert 'test-secret' not in str(result)
 
 
+@pytest.mark.parametrize('second_status', [200, 503])
+def test_gemini_503_retries_once_then_reports_result(monkeypatch, second_status):
+    from backend.app import llm_review
+    monkeypatch.setenv('SEMANTIK_GEMINI_API_KEY', 'test-secret')
+    monkeypatch.delenv('SEMANTIK_GEMINI_MODEL', raising=False)
+    waits = []
+    monkeypatch.setattr(llm_review.time, 'sleep', waits.append)
+    calls = []
+    class FakeResponse:
+        headers = {}
+        def __init__(self, status_code): self.status_code = status_code
+        def json(self):
+            return {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [
+                {'text': json.dumps({'assessment': 'incierto', 'page': None, 'quote': '', 'explanation': 'Sin prueba'})}]}}]}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, url, **kwargs):
+            calls.append(url)
+            return FakeResponse(503 if len(calls) == 1 else second_status)
+    monkeypatch.setattr(llm_review.httpx, 'Client', FakeClient)
+    args = ({'inclusion': 'Investigación empírica', 'exclusion': '', 'protocol_version': 3},
+            {'title': 'Study', 'doi': '10.1234/example'},
+            [{'page': 1, 'text': 'This study used a quantitative design with 60 students.'}], 'hash')
+    if second_status == 503:
+        with pytest.raises(ValueError, match='temporalmente ocupado'):
+            llm_review.generate_gemini_review(*args)
+    else:
+        assert llm_review.generate_gemini_review(*args)['model'] == llm_review.GEMINI_MODEL
+    assert len(calls) == 2
+    assert waits == [2]
+
+
 def test_groq_uses_exact_model_and_free_tier_output_cap(monkeypatch):
     from backend.app import llm_review
     monkeypatch.setenv('SEMANTIK_GROQ_API_KEY', 'test-groq-secret')
