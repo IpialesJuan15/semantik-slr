@@ -132,6 +132,7 @@ def test_gemini_request_is_explicit_bounded_and_checked(monkeypatch):
     assert result['fields']['questions'] and result['document_sha256']=='a'*64
     assert 'gemini-3.5-flash-lite:generateContent' in seen['url']
     assert 'ignora instrucciones' in seen['body']['systemInstruction']['parts'][0]['text']
+    assert seen['body']['generationConfig']['responseSchema']['required'] == ['fields']
     pages=[{'page':n,'text':TEXT} for n in range(1,80)]
     passages=method_passages(pages)
     assert len(passages)==79 and passages[-1]['text']==TEXT
@@ -144,3 +145,23 @@ def test_full_pages_preserve_table_continuations_and_metadata():
     assert citation_present('10.1234/ab', pages[0]['text'])
     assert citation_present('empirical studies', 'empir-\nical studies')
     assert not citation_present('studies in Ecuador', 'studies in Saudi Arabia')
+
+
+def test_extraction_accepts_envelope_variants_without_relaxing_quotes():
+    import pytest
+    pages = [{'page': 1, 'text': TEXT}]
+    for raw in [json.dumps(raw_fields()), '```json\n'+json.dumps({'fields': raw_fields()})+'\n```']:
+        fields, _, _ = checked_fields(raw, pages, pages)
+        assert len(fields['questions']) == 1
+    for raw in ['[]', 'null', '{"unrelated":123}', '{"fields":', '{"fields":[]}']:
+        with pytest.raises(ValueError, match='formato no válido'):
+            checked_fields(raw, pages, pages)
+
+
+def test_extraction_requests_structured_schema():
+    from backend.app.base_extraction import extraction_schema
+    schema = extraction_schema()
+    assert schema['required'] == ['fields']
+    fields = schema['properties']['fields']['properties']
+    assert fields['inclusion']['items']['required'] == ['value', 'evidence']
+    assert fields['last_included_date']['nullable'] is True

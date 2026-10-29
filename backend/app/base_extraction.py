@@ -38,13 +38,28 @@ def citation_present(quote, text):
     return normalize(quote) in normalize(text)
 
 
+def extraction_schema():
+    citation = {'type': 'OBJECT', 'properties': {'page': {'type': 'INTEGER'}, 'quote': {'type': 'STRING'}}, 'required': ['page', 'quote']}
+    item = {'type': 'OBJECT', 'properties': {'value': {'type': 'STRING'}, 'evidence': {'type': 'ARRAY', 'items': citation, 'minItems': 1, 'maxItems': 3}}, 'required': ['value', 'evidence']}
+    properties = {name: {'type': 'ARRAY', 'items': item} for name in LIST_FIELDS}
+    properties['inclusion'] = {'type': 'ARRAY', 'items': {**item, 'properties': {**item['properties'], 'historical_date': {'type': 'BOOLEAN'}}}}
+    properties.update({name: {**item, 'nullable': True} for name in SCALAR_FIELDS})
+    return {'type': 'OBJECT', 'properties': {'fields': {'type': 'OBJECT', 'properties': properties, 'required': list(properties)}}, 'required': ['fields']}
+
+
 def checked_fields(raw_text, pages, passages):
     try:
-        raw = json.loads(raw_text)
-        proposed = raw['fields']
-        if not isinstance(proposed, dict): raise TypeError()
-    except (ValueError, TypeError, KeyError):
-        raise ValueError('Gemini no devolvió una extracción estructurada. No se modificó el protocolo.') from None
+        text = raw_text.strip().lstrip('\ufeff')
+        if text.startswith('```') and text.endswith('```'):
+            text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.I)[:-3].strip()
+        raw = json.loads(text)
+        if not isinstance(raw, dict): raise ValueError()
+        # Older responses sometimes omit only the outer "fields" envelope.
+        proposed = raw.get('fields', raw)
+        if not isinstance(proposed, dict) or not set(proposed).intersection(LIST_FIELDS + SCALAR_FIELDS):
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError('Gemini devolvió un formato no válido. La propuesta anterior se conserva; no se modificó el protocolo.') from None
     page_map = {p['page']: p['text'] for p in pages}
     warnings = []
 
@@ -114,7 +129,7 @@ def generate_base_extraction(pages, pdf_hash, model='gemini-3.5-flash-lite'):
     )
     body = {'systemInstruction': {'parts': [{'text': instructions}]},
             'contents': [{'role': 'user', 'parts': [{'text': json.dumps({'pdf_passages': passages}, ensure_ascii=False)}]}],
-            'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0, 'maxOutputTokens': 8192}}
+            'generationConfig': {'responseMimeType': 'application/json', 'responseSchema': extraction_schema(), 'temperature': 0, 'maxOutputTokens': 8192}}
     try:
         with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as client:
             response = client.post(f'{GEMINI_MODELS_URL}/{model}:generateContent', headers={'x-goog-api-key': key}, json=body)
