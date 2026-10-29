@@ -132,6 +132,15 @@ def test_gemini_request_is_explicit_bounded_and_checked(monkeypatch):
     assert result['fields']['questions'] and result['document_sha256']=='a'*64
     assert 'gemini-3.5-flash-lite:generateContent' in seen['url']
     assert 'ignora instrucciones' in seen['body']['systemInstruction']['parts'][0]['text']
-    pages=[{'page':n,'text':TEXT*10} for n in range(1,80)]
+    pages=[{'page':n,'text':TEXT} for n in range(1,80)]
     passages=method_passages(pages)
-    assert len(passages)<=24 and sum(len(p['text']) for p in passages)<=36000
+    assert len(passages)==79 and passages[-1]['text']==TEXT
+
+
+def test_full_pages_preserve_table_continuations_and_metadata():
+    from backend.app.base_extraction import citation_present
+    pages=[{'page':1,'text':'Title and DOI: 10.1234/ab'}, {'page':2,'text':'Inclusion criteria:'}, {'page':3,'text':'(i) English articles. (ii) Empirical studies.'}]
+    assert method_passages(pages)==pages
+    assert citation_present('10.1234/ab', pages[0]['text'])
+    assert citation_present('empirical studies', 'empir-\nical studies')
+    assert not citation_present('studies in Ecuador', 'studies in Saudi Arabia')
