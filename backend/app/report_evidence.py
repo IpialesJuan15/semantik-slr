@@ -74,12 +74,36 @@ def render_document_evidence(articles):
             sections.append('<p>Pasajes para este criterio: ' + escape(methods.get(method, method)) +
                             ('. Modelo: ' + escape(item_retrieval['model']) if item_retrieval.get('model') else '') + '.</p>')
             sections.append('<p>Propuesta de IA: <strong>' + escape(labels.get(item.get('assessment'), 'Evidencia insuficiente')) + '</strong>.</p>')
+            citations = []
             if item.get('quote_verified'):
-                sections.append(f'<blockquote>{escape(item.get("quote"))}</blockquote>'
-                                f'<p>Página {escape(item.get("page"))}; coincidencia textual comprobada.</p>'
-                                f'<p>{escape(item.get("explanation"))}</p>')
+                saved_citations = item.get('evidence')
+                if isinstance(saved_citations, list):
+                    citations = [citation for citation in saved_citations
+                                 if isinstance(citation, dict)
+                                 and type(citation.get('page')) is int and citation['page'] > 0
+                                 and isinstance(citation.get('quote'), str) and citation['quote'].strip()
+                                 and citation.get('quote_verified') is not False]
+                elif isinstance(item.get('quote'), str) and item['quote'].strip():
+                    # Reports created before multiple citations keep their original
+                    # quotation and page; never reconstruct from today's PDF.
+                    citations = [{'quote': item['quote'], 'page': item.get('page')}]
+            if citations:
+                sections.append(f'<p>{escape(item.get("explanation"))}</p>')
+                for citation in citations:
+                    sections.append(f'<blockquote>{escape(citation["quote"])}</blockquote>'
+                                    f'<p>Página {escape(citation.get("page"))}; coincidencia textual comprobada.</p>')
+                    context = citation.get('context')
+                    if isinstance(context, str) and context.strip() and context.strip() != citation['quote'].strip():
+                        sections.append('<details><summary>Contexto de la cita en el texto extraído</summary>'
+                                        f'<p>{escape(context)}</p></details>')
             else:
                 sections.append('<p>Sin cita comprobable. Requiere lectura del investigador.</p>')
+            limitations = item.get('limitations')
+            if isinstance(limitations, list):
+                limitations = [value for value in limitations if isinstance(value, str) and value.strip()]
+                if limitations:
+                    sections.append('<p>Límites de la propuesta:</p><ul>' +
+                                    ''.join(f'<li>{escape(value)}</li>' for value in limitations) + '</ul>')
             facets = item.get('evidence_facets') or {}
             if facets:
                 sections.append('<p>Evidencia localizada por partes: '

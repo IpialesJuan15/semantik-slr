@@ -8,7 +8,7 @@ import time
 import httpx
 
 from .documents import clean_pdf_text
-from .pdf_retrieval import EMPIRICAL_CRITERION, EMPIRICAL_METHOD, EMPIRICAL_NONSTUDY
+from .pdf_retrieval import EMPIRICAL_CRITERION
 
 OLLAMA_URL = 'http://127.0.0.1:11434/api/generate'
 MODEL = 'qwen2.5:3b'
@@ -17,7 +17,8 @@ GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 GEMINI_URL = f'{GEMINI_MODELS_URL}/{GEMINI_MODEL}:generateContent'
 GROQ_MODEL = 'qwen/qwen3.8-27b'
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-MAX_CRITERIA = 12
+MAX_CRITERIA = 40
+MAX_BATCH_CRITERIA = 12
 
 
 class LLMRateLimitError(ValueError):
@@ -46,7 +47,7 @@ def criteria_for(review):
             if line:
                 criteria.append({'kind': kind, 'text': line})
     if not criteria or len(criteria) > MAX_CRITERIA:
-        raise ValueError('El asistente admite de 1 a 12 criterios. Ajusta el protocolo o revisa manualmente este artículo.')
+        raise ValueError('El asistente admite de 1 a 40 criterios en el protocolo. Ajusta el protocolo antes de continuar.')
     return criteria
 
 
@@ -86,7 +87,7 @@ def passages_for(pages, criteria):
 
 
 def present_in_page(quote, page_text):
-    if not isinstance(quote, str) or not 20 <= len(quote) <= 500:
+    if not isinstance(quote, str) or not 20 <= len(quote) <= 900:
         return False
     compact = lambda value: ' '.join(clean_pdf_text(value).split()).casefold()
     return compact(quote) in compact(page_text)
@@ -102,18 +103,71 @@ def supports_empirical_claim(criterion, assessment, quote):
         return True
     claims_empirical = ((criterion['kind'] == 'inclusion' and assessment == 'apoya') or
                         (criterion['kind'] == 'exclusion' and assessment == 'contradice'))
-    return bool((EMPIRICAL_METHOD if claims_empirical else EMPIRICAL_NONSTUDY).search(quote))
+    if not claims_empirical:
+        # A compound criterion can be contradicted by geography, language, etc.
+        # This narrow check only guards a positive assertion of empirical work.
+        return True
+    # A label such as "quantitative" alone does not establish an empirical method.
+    design = re.search(r'(?:quasi[- ]?experimental|cuasiexperimental|quantitative|qualitative|cuantitativo|cualitativo|mixed.methods).{0,55}(?:design|dise[ñn]o|approach|data|study)|(?:dise[ñn]o|design).{0,55}(?:experimental|cuantitativo|cualitativo)', quote, re.I)
+    data = re.search(r'data (?:was |were )?(?:collect|analy)|collected data|recolecci[oó]n de datos|datos.{0,35}(?:recog|recopil|analiz)|(?:interviewed|surveyed|encuest|entrevist)\w*|sample of\s+(?:\d+|[a-z]+)|muestra de\s+\d+', quote, re.I)
+    return bool(design or data)
+
+
+def verified_evidence(proposal, passages, page_map):
+    """Only source text enters context; the model cannot supply a fake context."""
+    raw = proposal.get('evidence')
+    if not isinstance(raw, list):
+        raw = [{'page': proposal.get('page'), 'quote': proposal.get('quote', '')}]
+    verified, seen, rejected = [], set(), False
+    for citation in raw[:3]:
+        if not isinstance(citation, dict):
+            rejected = True
+            continue
+        page, quote = citation.get('page'), citation.get('quote', '')
+        if isinstance(page, str) and page.isdigit(): page = int(page)
+        if not quote and page is None: continue
+        matching = next((p for p in passages if p['page'] == page and
+                         present_in_page(quote, p['text'])), None)
+        if type(page) is not int or page not in page_map or not present_in_page(quote, page_map[page]) or not matching:
+            rejected = True
+            continue
+        identity = (page, ' '.join(quote.casefold().split()))
+        if identity not in seen:
+            context = clean_pdf_text(matching['text'])
+            # Bound stored context while keeping the quote in view even for legacy passages.
+            if len(context) > 1400:
+                compact = ' '.join(context.split())
+                start = max(0, compact.casefold().find(' '.join(clean_pdf_text(quote).split()).casefold()) - 200)
+                context = compact[start:start + 1400]
+            verified.append({'page': page, 'quote': quote, 'context': context})
+            seen.add(identity)
+        else:
+            # Deduplication changes numbered references in the explanation.
+            rejected = True
+    return verified, rejected or len(raw) > 3
 
 
 def request_context(review, article, pages, context=None):
     criteria = criteria_for(review)
+    if len(criteria) > MAX_BATCH_CRITERIA:
+        raise ValueError('Consulta un criterio a la vez con Gemini o Groq. El análisis conjunto admite hasta 12 criterios por solicitud.')
     passages = context['passages'] if context is not None else passages_for(pages, criteria)
     instructions = (
         'Eres un asistente de cribado de revisiones sistemáticas. Responde en español con JSON válido: '
-        '{"items":[{"index":0,"assessment":"apoya|contradice|incierto","page":1,'
-        '"quote":"cita textual exacta","explanation":"explicación breve"}]}. '
-        'Devuelve exactamente un item por criterio, usando index desde 0. Si no hay una cita exacta y relevante, '
-        'usa assessment incierto, page null y quote vacío. Nunca inventes páginas, citas, fecha ni país. '
+        '{"items":[{"index":0,"assessment":"apoya|contradice|incierto",'
+        '"evidence":[{"page":1,"quote":"oración textual completa"}],'
+        '"explanation":"explicación en español con referencias [1], [2] a las citas",'
+        '"limitations":["parte concreta del criterio aún sin demostrar"]}]}. '
+        'Devuelve exactamente un item por criterio, usando index desde 0. Aporta de una a tres citas '
+        'completas de 60 a 900 caracteres, en su idioma original, de páginas distintas si hace falta. '
+        'No cortes una cita después de un adjetivo como quantitative. Relaciona cada afirmación '
+        'de tu explicación (máximo 150 palabras) con una cita numerada: no añadas hechos que esas citas no demuestren. '
+        'Para un criterio compuesto, separa lugar, población, aplicación y técnica en la explicación. '
+        'No conviertas ejemplos introducidos por "en particular" en requisitos nuevos; si el protocolo es ambiguo, '
+        'expresa la ambigüedad en limitations y marca incierto. Si falta prueba, di "no localizado en los pasajes"; '
+        'no afirmes que está ausente del PDF completo. Solo incluye en limitations dudas concretas que impidan '
+        'resolver este criterio, o una lista vacía. Si no hay cita exacta y relevante, usa incierto y evidence vacío. '
+        'Nunca inventes páginas, citas, fecha ni país. '
         'Un fragmento parecido no demuestra elegibilidad. Una cita que respalda exclusión geográfica debe '
         'referirse al estudio principal, no a otro trabajo citado. La decisión final corresponde al investigador.'
     )
@@ -152,34 +206,38 @@ def checked_result(raw_text, criteria, passages, pages, review, pdf_hash, provid
         if isinstance(item, dict) and str(item.get('index', '')).isdigit():
             by_index[int(item['index'])] = item
     page_map = {page['page']: clean_pdf_text(page['text']) for page in pages}
-    selected_pages = {item['page'] for item in passages}
     results = []
     for index, criterion in enumerate(criteria):
         proposal = by_index.get(index, {})
-        page = proposal.get('page')
-        if isinstance(page, str) and page.isdigit(): page = int(page)
-        quote = proposal.get('quote', '')
         assessment = str(proposal.get('assessment', '')).strip().casefold()
-        valid = (type(page) is int and page in selected_pages and page in page_map
-                 and present_in_page(quote, page_map[page])
-                 and any(p['page'] == page and present_in_page(quote, p['text']) for p in passages)
-                 and assessment in ('apoya', 'contradice', 'incierto'))
-        unsupported = valid and not supports_empirical_claim(criterion, assessment, quote)
-        evidence_status = ('insufficient_support' if unsupported else 'verified' if valid else
-                           'model_uncertain' if assessment == 'incierto' and not quote else
-                           'quote_unverified' if quote else 'no_citation')
+        evidence, rejected = verified_evidence(proposal, passages, page_map)
+        valid = bool(evidence) and assessment in ('apoya', 'contradice', 'incierto')
+        if not valid: evidence = []
+        joined = ' '.join(item['quote'] for item in evidence)
+        short = bool(evidence) and all(len(item['quote'].split()) < 7 for item in evidence)
+        unsupported = valid and (short or not supports_empirical_claim(criterion, assessment, joined))
+        limits = proposal.get('limitations', [])
+        limitations = [s.strip()[:400] for s in limits[:4] if isinstance(s, str) and s.strip()] if isinstance(limits, list) else []
+        if rejected: limitations = ['Una o más citas propuestas no se localizaron en los pasajes enviados.']
+        elif unsupported: limitations = ['Las citas no aportan una descripción suficiente para sostener esta conclusión.']
+        evidence_status = ('quote_unverified' if rejected else 'insufficient_support' if unsupported else 'verified' if valid else
+                           'model_uncertain' if assessment == 'incierto' else 'no_citation')
+        explanation = str(proposal.get('explanation', ''))[:1200] if valid else 'No se obtuvo una cita textual comprobable para este criterio.'
+        if rejected:
+            explanation = 'No se conserva la explicación del modelo porque incluye citas que no se pudieron comprobar. Las citas localizadas se muestran como referencia.'
+        elif unsupported:
+            explanation = 'La cita existe en el PDF, pero es demasiado breve o no describe el método ni los datos necesarios. Amplía el contexto aquí para revisar la fuente.'
+        first = evidence[0] if evidence else {}
         results.append({'criterion': criterion['text'], 'kind': criterion['kind'],
-                        'assessment': assessment if valid and not unsupported else 'incierto',
-                        'page': page if valid else None, 'quote': quote if valid else '',
-                        'explanation': ('La cita existe en el PDF, pero no demuestra el método ni los datos del estudio. Revisa la sección de metodología.'
-                                        if unsupported else str(proposal.get('explanation', ''))[:400] if valid else
-                                        'No se obtuvo una cita textual comprobable para este criterio.'),
+                        'assessment': assessment if valid and not unsupported and not rejected and not limitations else 'incierto',
+                        'page': first.get('page'), 'quote': first.get('quote', ''),
+                        'evidence': evidence, 'explanation': explanation, 'limitations': limitations,
                         'quote_verified': bool(valid), 'evidence_status': evidence_status,
-                        'evidence_validation_version': 2})
+                        'evidence_validation_version': 3})
     return {'provider': provider, 'model': model, 'document_sha256': pdf_hash,
             'protocol_version': review['protocol_version'], 'passages_examined': len(passages),
             'criteria': results, 'scope': 'experimental_pdf_passages', 'usage': usage or {},
-            'evidence_validation_version': 2,
+            'evidence_validation_version': 3,
             'warning': 'Cita presente en el PDF no significa interpretación correcta. Verifica cada criterio y decide tú.'}
 
 
@@ -305,7 +363,7 @@ def generate_groq_review(review, article, pages, pdf_hash, criterion_index, cont
         'Eres un asistente de cribado de revisiones sistemáticas. Responde en español con un único '
         'objeto JSON: {"assessment":"apoya|contradice|incierto","page":1,'
         '"quote":"cita textual exacta","explanation":"explicación breve"}. '
-        'Evalúa solamente el criterio del usuario. Cita un pasaje exacto de hasta 150 caracteres de '
+        'Evalúa solamente el criterio del usuario. Cita una oración completa de hasta 300 caracteres de '
         'pdf_passages, con su página, y explica en hasta 25 palabras. Si no hay cita relevante, usa '
         'incierto, page null y quote vacío. No inventes país, fecha, páginas ni citas. '
         'Un pasaje de otro estudio citado no demuestra el lugar del estudio principal. '

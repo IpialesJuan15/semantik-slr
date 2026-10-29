@@ -75,7 +75,11 @@ ROWS = [
 
 def update_inclusion(base):
     """Keep the original date range in provenance, not in new-study screening."""
-    return '\n'.join(base['inclusion'][1:] + [
+    # The curated legacy template stores its historical date range first.
+    # Generic PDFs preserve every criterion unless the researcher explicitly
+    # identified historical-date criteria to keep only in base provenance.
+    skipped = set(base.get('historical_date_indexes', [])) if base.get('origin') == 'pdf' else {0}
+    return '\n'.join([item for index, item in enumerate(base['inclusion']) if index not in skipped] + [
         f'Para la actualización: fecha de publicación posterior a {base["last_included_date"]}.'
     ])
 

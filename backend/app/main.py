@@ -11,12 +11,13 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from pypdf import PdfReader
 from .analysis import analyze, MODEL
+from .base_extraction import generate_base_extraction
 from .documents import MAX_PDF_BYTES, clean_pdf_text, download_pdf, extract_pdf, openalex_pdf_urls
 from .evaluation import evaluate
 from .pdf_retrieval import retrieve_passages
@@ -84,20 +85,28 @@ class AnalysisInput(BaseModel):
 class LLMReviewInput(BaseModel):
     retrieval: Literal['semantic', 'lexical', 'legacy'] = 'legacy'
     provider: Literal['local', 'gemini', 'groq'] = 'local'
-    criterion_index: int | None = Field(default=None, ge=0, le=11)
+    criterion_index: int | None = Field(default=None, ge=0, le=39)
     gemini_model: Literal['gemini-3.8-flash', 'gemini-3.5-flash-lite'] | None = None
 
 class PublishedInput(BaseModel):
     doi: str = Field(min_length=3, max_length=300)
 
+class BaseExtractionInput(BaseModel):
+    gemini_model: Literal['gemini-3.8-flash', 'gemini-3.5-flash-lite'] = 'gemini-3.5-flash-lite'
+
 class PublishedMethodInput(BaseModel):
     questions: list[str] = Field(min_length=1, max_length=10)
     inclusion: list[str] = Field(min_length=1, max_length=40)
-    exclusion: list[str] = Field(min_length=1, max_length=40)
-    sources: list[str] = Field(min_length=1, max_length=20)
-    search_strategy: str = Field(min_length=10, max_length=5000)
-    search_date: str = Field(pattern=r'^\d{4}-\d{2}$')
+    exclusion: list[str] = Field(default_factory=list, max_length=40)
+    sources: list[str] = Field(default_factory=list, max_length=20)
+    search_strategy: str = Field(default='', max_length=5000)
+    search_date: str = Field(default='', pattern=r'^(\d{4}-\d{2})?$')
     last_included_date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    historical_date_indexes: list[int] = Field(default_factory=list, max_length=40)
+    document_sha256: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    extraction_id: int | None = Field(default=None, ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=2000)
+    doi: str | None = Field(default=None, max_length=300)
     @field_validator('questions', 'inclusion', 'exclusion', 'sources')
     @classmethod
     def nonempty_items(cls, values):
@@ -107,6 +116,7 @@ class PublishedMethodInput(BaseModel):
     @field_validator('search_date')
     @classmethod
     def valid_month(cls, value):
+        if not value: return value
         try: date.fromisoformat(value+'-01')
         except ValueError: raise ValueError('Indica un mes válido.') from None
         return value
@@ -126,7 +136,7 @@ def create_app(database_path=None):
         initialize(path)
         yield
         executor.shutdown(wait=True)
-    app = FastAPI(title='Semantik SLR', version='0.19.0', lifespan=lifespan)
+    app = FastAPI(title='Semantik SLR', version='0.20.0', lifespan=lifespan)
 
     def get_review(db, review_id):
         row = db.execute('SELECT * FROM reviews WHERE id=?', (review_id,)).fetchone()
@@ -137,6 +147,27 @@ def create_app(database_path=None):
         row = db.execute('SELECT * FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
         if row is None: raise HTTPException(404,'Esta revisión no tiene un estudio publicado registrado.')
         return {**json.loads(row['snapshot']), 'confirmed':bool(row['confirmed']), 'created_at':row['created_at']}
+
+    def save_base_document(db, review_id, content, filename, extracted):
+        db.execute('''INSERT INTO base_documents
+            (review_id,filename,sha256,page_count,characters,truncated,pages_json,pdf) VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(review_id) DO UPDATE SET filename=excluded.filename,sha256=excluded.sha256,
+            page_count=excluded.page_count,characters=excluded.characters,truncated=excluded.truncated,
+            pages_json=excluded.pages_json,pdf=excluded.pdf,created_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')''',
+            (review_id,filename,extracted['sha256'],extracted['page_count'],extracted['characters'],
+             int(extracted['truncated']),json.dumps(extracted['pages'],ensure_ascii=False),content))
+        text='\n\n'.join(page['text'] for page in extracted['pages'])
+        db.execute('UPDATE reviews SET base_text=?,base_filename=? WHERE id=?',(text,filename,review_id))
+        db.execute('UPDATE published_bases SET confirmed=0 WHERE review_id=?',(review_id,))
+        return text
+
+    def checked_page(row, page_number, expected_hash=None):
+        if row is None: raise HTTPException(404,'No hay un PDF guardado con páginas disponibles.')
+        if expected_hash and row['sha256'] != expected_hash:
+            raise HTTPException(409,'El PDF cambió. Actualiza la vista antes de consultar esta cita.')
+        page=next((item for item in json.loads(row['pages_json']) if item['page']==page_number),None)
+        if page is None: raise HTTPException(404,'La página no existe en el PDF guardado.')
+        return {'page':page_number,'text':clean_pdf_text(page['text']),'page_count':row['page_count'],'document_sha256':row['sha256']}
 
     def is_base_publication(record, base):
         doi=normalize_doi(record.get('doi',''))
@@ -212,7 +243,7 @@ def create_app(database_path=None):
     @app.get('/api/status')
     def status():
         import importlib.util
-        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'gemini_key_configured':bool(os.getenv('SEMANTIK_GEMINI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.19.0'}
+        return {'semantic_package_installed': importlib.util.find_spec('fastembed') is not None, 'model':MODEL, 'openalex_key_configured':bool(os.getenv('OPENALEX_API_KEY')), 'gemini_key_configured':bool(os.getenv('SEMANTIK_GEMINI_API_KEY')), 'groq_key_configured':bool(os.getenv('SEMANTIK_GROQ_API_KEY')), 'mode':'local_single_user', 'version':'0.20.0'}
 
     @app.get('/api/published-template')
     def published_template_info():
@@ -232,6 +263,32 @@ def create_app(database_path=None):
             event(db,cursor.lastrowid,'published_base_created',{'doi':base['doi'],'original_count':base['original_count'],'confirmed':False})
             return get_review(db,cursor.lastrowid)
 
+    @app.post('/api/reviews/from-base-pdf', status_code=201)
+    async def create_from_base_pdf(file:UploadFile=File(...), title:str=Form(default=''), doi:str=Form(default='')):
+        content=await file.read(MAX_PDF_BYTES+1)
+        await file.close()
+        if len(content)>MAX_PDF_BYTES: raise HTTPException(413,'El PDF debe ocupar como máximo 8 MB.')
+        if len(title)>2000 or len(doi)>300: raise HTTPException(422,'El título o DOI supera el tamaño permitido.')
+        try: extracted=extract_pdf(content)
+        except ValueError as error: raise HTTPException(422,str(error)) from None
+        filename=Path(file.filename or 'revision.pdf').name
+        title=title.strip() or Path(filename).stem
+        doi=normalize_doi(doi)
+        base={'origin':'pdf','title':title,'doi':doi,'authors':'','year':None,'license':'No registrada',
+              'source_url':f'https://doi.org/{doi}' if doi else '', 'questions':[],'inclusion':[],
+              'exclusion':[],'sources':[],'search_strategy':'','search_date':'','last_included_date':'',
+              'historical_date_indexes':[],'studies':[],'application_counts':[],'original_count':None,
+              'method_source':'PDF adjuntado por el investigador; método pendiente de extracción y confirmación.',
+              'coverage_note':'La actualización debe documentar sus fuentes, consultas y límites de cobertura.'}
+        with connect(path) as db:
+            cursor=db.execute('INSERT INTO reviews (title,question,inclusion,exclusion,base_reference) VALUES (?,?,?,?,?)',(title,'','','',doi))
+            rid=cursor.lastrowid
+            db.execute('INSERT INTO published_bases (review_id,doi,snapshot) VALUES (?,?,?)',(rid,doi,json.dumps(base,ensure_ascii=False)))
+            save_base_document(db,rid,content,filename,extracted)
+            event(db,rid,'published_base_created',{'origin':'pdf','doi':doi,'confirmed':False})
+            event(db,rid,'base_pdf_imported',{'filename':filename,'sha256':extracted['sha256'],'pages':extracted['page_count'],'truncated':extracted['truncated']})
+            return get_review(db,rid)
+
     @app.get('/api/reviews/{review_id}/published-base')
     def published_base(review_id:int):
         with connect(path) as db:
@@ -243,19 +300,46 @@ def create_app(database_path=None):
         with connect(path) as db:
             review=get_review(db,review_id)
             base=get_published(db,review_id)
+            previous_base=dict(base)
             if not review['base_text']:
                 raise HTTPException(422,'Sube primero el PDF original con texto seleccionable.')
+            document=db.execute('SELECT sha256,truncated FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+            if document and document['truncated']: raise HTTPException(422,'La extracción del PDF quedó incompleta. Adjunta un PDF legible antes de confirmar.')
+            if payload.document_sha256 and (not document or document['sha256']!=payload.document_sha256):
+                raise HTTPException(409,'El PDF cambió. Recarga la propuesta antes de confirmar el método.')
+            extraction=None
+            if payload.extraction_id:
+                extraction=db.execute('SELECT id,document_sha256,result_json FROM base_extractions WHERE id=? AND review_id=?',(payload.extraction_id,review_id)).fetchone()
+                if not extraction or not document or extraction['document_sha256']!=document['sha256']:
+                    raise HTTPException(409,'La propuesta no pertenece al PDF actual. Genera o carga la propuesta vigente.')
+            if any(index<0 or index>=len(payload.inclusion) for index in payload.historical_date_indexes):
+                raise HTTPException(422,'Selecciona criterios de fecha válidos.')
             updated=payload.model_dump()
+            for key in ('document_sha256','extraction_id'): updated.pop(key,None)
+            for key in ('title','doi'):
+                if updated[key] is None: updated.pop(key)
+            if 'doi' in updated: updated['doi']=normalize_doi(updated['doi'])
             for key,value in updated.items(): base[key]=value
+            active_criteria=[line for line in (update_inclusion(base)+'\n'+'\n'.join(base['exclusion'])).splitlines() if line.strip()]
+            if len(active_criteria)>40:
+                raise HTTPException(422,'El asistente admite hasta 40 criterios activos, incluida la fecha de actualización. Ajusta los criterios antes de confirmar.')
+            if payload.title: db.execute('UPDATE reviews SET title=? WHERE id=?',(payload.title.strip(),review_id))
+            if payload.doi is not None:
+                db.execute('UPDATE reviews SET base_reference=? WHERE id=?',(base['doi'],review_id))
+                base['source_url']=f'https://doi.org/{base["doi"]}' if base['doi'] else ''
+            if extraction:
+                base['method_extraction']={'id':extraction['id'],'document_sha256':extraction['document_sha256'],
+                                           'proposal':json.loads(extraction['result_json'])}
             changed = (review['question']!='\n'.join(base['questions']) or
                        review['inclusion']!=update_inclusion(base) or
-                       review['exclusion']!='\n'.join(base['exclusion']))
+                       review['exclusion']!='\n'.join(base['exclusion']) or
+                       any(previous_base.get(key) != base.get(key) for key in ('sources','search_strategy','search_date','last_included_date')))
             if changed:
                 db.execute('UPDATE reviews SET question=?,inclusion=?,exclusion=?,protocol_version=protocol_version+1 WHERE id=?',(
                     '\n'.join(base['questions']),update_inclusion(base),'\n'.join(base['exclusion']),review_id))
                 db.execute('UPDATE articles SET score=NULL,analysis=NULL,analyzed_version=NULL WHERE review_id=?',(review_id,))
-            db.execute('UPDATE published_bases SET snapshot=?,confirmed=1 WHERE review_id=?',(
-                json.dumps({k:v for k,v in base.items() if k not in ('confirmed','created_at')},ensure_ascii=False),review_id))
+            db.execute('UPDATE published_bases SET snapshot=?,confirmed=1,doi=? WHERE review_id=?',(
+                json.dumps({k:v for k,v in base.items() if k not in ('confirmed','created_at')},ensure_ascii=False),base['doi'],review_id))
             event(db,review_id,'published_base_confirmed',{'doi':base['doi'],'method_changed':changed,'protocol_version':review['protocol_version']+int(changed)})
             return get_published(db,review_id)
 
@@ -303,27 +387,65 @@ def create_app(database_path=None):
         content = await file.read(8*1024*1024+1)
         await file.close()
         if len(content)>8*1024*1024: raise HTTPException(413,'El PDF debe ocupar como máximo 8 MB.')
-        if not content.startswith(b'%PDF'): raise HTTPException(422,'Selecciona un archivo PDF válido.')
-        try:
-            pdf = PdfReader(io.BytesIO(content))
-            if pdf.is_encrypted or len(pdf.pages)>80: raise ValueError()
-            text = '\n\n'.join(page.extract_text() or '' for page in pdf.pages)[:120000]
-        except Exception:
-            raise HTTPException(422,'El PDF debe ser legible, sin contraseña y de hasta 80 páginas.') from None
-        if len(text.strip())<50: raise HTTPException(422,'No se pudo extraer texto. Usa un PDF con texto seleccionable; el OCR todavía no está disponible.')
+        try: extracted=extract_pdf(content)
+        except ValueError as error: raise HTTPException(422,str(error)) from None
+        text='\n\n'.join(page['text'] for page in extracted['pages'])
+        filename=Path(file.filename or 'revision.pdf').name
         with connect(path) as db:
             base_row=db.execute('SELECT snapshot FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
             source_match=None
             if base_row:
                 base_data=json.loads(base_row['snapshot'])
                 simplified=' '.join(text.casefold().split()).replace('‑','-').replace('–','-')
-                source_match=base_data['doi'] in simplified or base_data['title'].casefold() in simplified
-                if not source_match:
+                source_match=bool(base_data['doi'] and base_data['doi'] in simplified) or base_data['title'].casefold() in simplified
+                if not source_match and base_data.get('origin')!='pdf':
                     raise HTTPException(422,'No se encontró el DOI ni el título esperado en este PDF. Selecciona la revisión publicada correcta.')
-            db.execute('UPDATE reviews SET base_text=?,base_filename=? WHERE id=?',(text,Path(file.filename or 'revision.pdf').name,review_id))
-            db.execute('UPDATE published_bases SET confirmed=0 WHERE review_id=?',(review_id,))
-            event(db,review_id,'base_pdf_imported',{'filename':Path(file.filename or 'revision.pdf').name,'sha256':hashlib.sha256(content).hexdigest(),'pages':len(pdf.pages),'source_match':source_match})
-        return {'characters':len(text),'pages':len(pdf.pages),'text':text,'source_match':source_match}
+            save_base_document(db,review_id,content,filename,extracted)
+            event(db,review_id,'base_pdf_imported',{'filename':filename,'sha256':extracted['sha256'],'pages':extracted['page_count'],'source_match':source_match,'truncated':extracted['truncated']})
+        return {'characters':len(text),'pages':extracted['page_count'],'text':text,'source_match':source_match,'sha256':extracted['sha256'],'truncated':extracted['truncated']}
+
+    @app.get('/api/reviews/{review_id}/base-document/pages/{page_number}')
+    def base_document_page(review_id:int,page_number:int,sha256:str|None=None):
+        with connect(path) as db:
+            get_review(db,review_id)
+            row=db.execute('SELECT sha256,page_count,pages_json FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+            return checked_page(row,page_number,sha256)
+
+    @app.get('/api/reviews/{review_id}/base-document.pdf')
+    def base_document_pdf(review_id:int):
+        with connect(path) as db:
+            get_review(db,review_id)
+            row=db.execute('SELECT pdf FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+        if row is None: raise HTTPException(404,'Adjunta el PDF original para poder abrirlo aquí.')
+        return Response(content=row['pdf'],media_type='application/pdf',headers={'Content-Disposition':'inline; filename="revision-base.pdf"'})
+
+    @app.get('/api/reviews/{review_id}/base-extraction')
+    def latest_base_extraction(review_id:int):
+        with connect(path) as db:
+            get_review(db,review_id)
+            document=db.execute('SELECT sha256,truncated FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+            if document is None: return {'status':'missing','needs_upload':True}
+            row=db.execute('SELECT * FROM base_extractions WHERE review_id=? AND document_sha256=? ORDER BY id DESC LIMIT 1',(review_id,document['sha256'])).fetchone()
+            if row is None: return {'status':'missing','needs_upload':False,'document_sha256':document['sha256'],'truncated':bool(document['truncated'])}
+            return {**json.loads(row['result_json']),'id':row['id'],'created_at':row['created_at']}
+
+    @app.post('/api/reviews/{review_id}/base-extraction')
+    def extract_base_method(review_id:int,payload:BaseExtractionInput):
+        with connect(path) as db:
+            get_review(db,review_id)
+            get_published(db,review_id)
+            document=db.execute('SELECT sha256,truncated,pages_json FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+        if document is None: raise HTTPException(422,'Adjunta otra vez el PDF original para conservar sus páginas y extraer el método.')
+        if document['truncated']: raise HTTPException(422,'La extracción del PDF quedó incompleta. Adjunta una versión legible más breve.')
+        try: result=generate_base_extraction(json.loads(document['pages_json']),document['sha256'],payload.gemini_model)
+        except ValueError as error: raise HTTPException(422,str(error)) from None
+        with connect(path) as db:
+            current=db.execute('SELECT sha256 FROM base_documents WHERE review_id=?',(review_id,)).fetchone()
+            if not current or current['sha256']!=document['sha256']:
+                raise HTTPException(409,'El PDF cambió durante la consulta. Genera una propuesta para el documento actual.')
+            cursor=db.execute('INSERT INTO base_extractions (review_id,document_sha256,model,result_json) VALUES (?,?,?,?)',(review_id,document['sha256'],result['model'],json.dumps(result,ensure_ascii=False)))
+            event(db,review_id,'base_method_proposed',{'extraction_id':cursor.lastrowid,'document_sha256':document['sha256'],'model':result['model'],'fields_found':[key for key,value in result['fields'].items() if value]})
+        return latest_base_extraction(review_id)
 
     @app.get('/api/reviews/{review_id}/articles')
     def articles(review_id:int):
@@ -343,6 +465,13 @@ def create_app(database_path=None):
             row = db.execute('SELECT pdf FROM article_documents WHERE article_id=?', (article_id,)).fetchone()
         if row is None: raise HTTPException(404, 'Este candidato todavía no tiene un PDF guardado.')
         return Response(content=row['pdf'], media_type='application/pdf', headers={'Content-Disposition': 'inline; filename="articulo.pdf"'})
+
+    @app.get('/api/articles/{article_id}/document/pages/{page_number}')
+    def candidate_document_page(article_id:int,page_number:int,sha256:str|None=None):
+        with connect(path) as db:
+            get_candidate(db,article_id)
+            row=db.execute('SELECT sha256,page_count,pages_json FROM article_documents WHERE article_id=?',(article_id,)).fetchone()
+            return checked_page(row,page_number,sha256)
 
     @app.post('/api/articles/{article_id}/document/from-openalex')
     def fetch_candidate_document(article_id: int):
@@ -675,6 +804,8 @@ def create_app(database_path=None):
         if base:
             categories=''.join('<li>'+escape(item['name'])+': '+escape(item['count'])+'</li>' for item in base['application_counts'])
             base_section=f'''<h2>Estudio original publicado</h2><p>DOI: {escape(base['doi'])}. Estudios incluidos en la publicación: {escape(base['original_count'])}. Método confirmado en esta aplicación: {"sí" if base['confirmed'] else "no"}.</p><p>Las categorías originales de la tabla 2 son:</p><ul>{categories}</ul><p>Los estudios originales están separados de los candidatos nuevos. {len(data.get('legacy_base_records',[]))} registro(s) histórico(s) de la propia revisión base se conservan en el JSON y se excluyen del recuento de candidatos. Las búsquedas en DOAJ y OpenAlex no reproducen la estrategia de las cuatro bases originales.</p>'''
+            if base.get('origin')=='pdf':
+                base_section=f'''<h2>Estudio original publicado</h2><p>{escape(base['title'])}. DOI: {escape(base['doi'] or 'No registrado')}. Método confirmado: {"sí" if base['confirmed'] else "no"}.</p><p>Los recuentos y estudios originales no se han estructurado. La extracción asistida propone preguntas, criterios y parámetros del método; su procedencia y citas se conservan en el JSON.</p><p>Fecha de corte confirmada: {escape(base['last_included_date'])}. Las fuentes y consultas de la actualización deben documentarse por separado.</p>'''
         document=f'''<!doctype html><html lang="es"><meta charset="utf-8"><title>Reporte v{row['version']}</title>
         <style>body{{font:15px/1.65 Arial,sans-serif;color:#34313d;background:white;margin:40px;max-width:1100px}}h1,h2{{color:#5f4778}}table{{width:100%;border-collapse:collapse;font-size:12px}}td,th{{padding:9px;border:1px solid #e4e2eb;text-align:left;overflow-wrap:anywhere}}th{{background:#f5f2f8}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{overflow-wrap:anywhere}}.pdf-evidence{{margin:32px 0;overflow-wrap:anywhere}}.criterion-evidence{{border-top:1px solid #e4e2eb;padding:12px 0}}blockquote{{font-family:Georgia,serif;border-left:3px solid #7251a2;padding-left:16px;margin-left:0;max-width:75ch}}@media print{{body{{margin:15px}}tr,.criterion-evidence{{break-inside:avoid}}}}@media(max-width:600px){{body{{margin:16px}}}}</style>
         <h1>{escape(review['title'])}</h1><p>Reporte de actualización v{row['version']} · {escape(data['created_at'])}</p><p><strong>{'Borrador de cribado: quedan artículos pendientes o decisiones por revisar.' if data.get('status')=='draft' else 'Cribado registrado: verifica la cobertura antes de usar este reporte como síntesis final.'}</strong></p>

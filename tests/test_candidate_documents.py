@@ -30,6 +30,7 @@ def test_candidate_pdf_is_saved_with_page_provenance_without_changing_decision(t
         assert client.post(f'/api/reviews/{rid}/articles', json={'title': 'Empirical AI in Ecuador', 'doi': '10.1234/example', 'abstract': 'AI at a university.'}).status_code == 201
         article_id = client.get(f'/api/reviews/{rid}/articles').json()[0]['id']
         assert client.get(f'/api/articles/{article_id}/document').json() == {'status': 'missing'}
+        assert client.get(f'/api/articles/{article_id}/document/pages/1').status_code == 404
         monkeypatch.setattr(main, 'openalex_pdf_urls', lambda doi: ['https://journal.example/broken.pdf', 'https://repository.example/article.pdf'])
         attempted = []
         def fake_download(url):
@@ -44,6 +45,12 @@ def test_candidate_pdf_is_saved_with_page_provenance_without_changing_decision(t
         assert len(attempted) == 2 and data['source_url'] == attempted[-1]
         assert data['page_previews'][0]['page'] == 1 and 'Ecuador' in data['page_previews'][0]['text']
         assert client.get(f'/api/articles/{article_id}/document.pdf').content == pdf
+        page = client.get(f'/api/articles/{article_id}/document/pages/1',params={'sha256':data['sha256']})
+        assert page.status_code == 200 and page.json()['document_sha256'] == data['sha256']
+        assert 'sixty participants' in page.json()['text']
+        assert client.get(f'/api/articles/{article_id}/document/pages/1?sha256=stale').status_code == 409
+        assert client.get(f'/api/articles/{article_id}/document/pages/2').status_code == 404
+        assert client.get(f'/api/articles/{article_id}/document/pages/0').status_code == 404
         assert client.get(f'/api/reviews/{rid}/articles').json()[0]['decision'] == 'pending'
         assert 'candidate_pdf_read' in [event['kind'] for event in client.get(f'/api/reviews/{rid}/history').json()]
         bad = client.post(f'/api/articles/{article_id}/document/upload', files={'file': ('wrong.pdf', b'not a PDF', 'application/pdf')})

@@ -430,3 +430,106 @@ def test_empirical_claim_needs_methodological_quote_even_when_quote_exists():
         criterion, pages, pages, review, 'hash', 'groq', 'model')['criteria'][0]
     assert strong['assessment'] == 'apoya'
     assert strong['evidence_status'] == 'verified'
+
+
+def test_multiple_pdf_quotes_keep_page_provenance_and_ignore_model_supplied_context():
+    from backend.app.llm_review import checked_result
+    location = 'This study involved eight students at a Costa Rican public university.'
+    method = 'The participants used an artificial intelligence writing tool during their university courses.'
+    pages = [{'page': 2, 'text': f'Participants and setting. {location} Recruitment was voluntary.'},
+             {'page': 9, 'text': f'Intervention. {method} The same rubric was used for all assignments.'}]
+    proposal = {'assessment': 'apoya', 'evidence': [
+        {'page': 2, 'quote': location, 'context': 'MODEL_INVENTED_CONTEXT'},
+        {'page': 9, 'quote': method, 'context': 'MODEL_INVENTED_CONTEXT'}],
+        'explanation': 'La población está en Costa Rica [1] y usó una herramienta de IA [2].',
+        'limitations': []}
+    result = checked_result(json.dumps(proposal),
+        [{'kind': 'inclusion', 'text': 'Aplicaciones de IA en educación superior de América Latina'}],
+        pages, pages, {'protocol_version': 3}, 'document-hash', 'gemini', 'test-model')
+    item = result['criteria'][0]
+    assert item['assessment'] == 'apoya'
+    assert item['quote_verified'] is True
+    assert [(part['page'], part['quote']) for part in item['evidence']] == [(2, location), (9, method)]
+    assert item['evidence'][0]['context'] == pages[0]['text']
+    assert item['evidence'][1]['context'] == pages[1]['text']
+    assert 'MODEL_INVENTED_CONTEXT' not in json.dumps(result)
+    assert item['quote'] == location and item['page'] == 2  # Legacy exports remain readable.
+    assert result['document_sha256'] == 'document-hash'
+    assert item['evidence_validation_version'] == result['evidence_validation_version'] == 3
+
+
+@pytest.mark.parametrize('invalid_citation', [
+    {'page': 2, 'quote': 'The software uses a transformer architecture trained on university data.'},
+    {'page': 9, 'quote': 'The participants attended a public university in Costa Rica.'},
+])
+def test_one_invalid_citation_discards_model_explanation_but_preserves_verified_evidence(invalid_citation):
+    from backend.app.llm_review import checked_result
+    quote = 'The participants attended a public university in Costa Rica.'
+    pages = [{'page': 2, 'text': quote}, {'page': 9, 'text': 'This page describes other study procedures.'}]
+    result = checked_result(json.dumps({'assessment': 'apoya',
+        'evidence': [{'page': 2, 'quote': quote}, invalid_citation],
+        'explanation': 'UNSUPPORTED_MODEL_EXPLANATION', 'limitations': []}),
+        [{'kind': 'inclusion', 'text': 'Universidad de América Latina y técnica de IA'}],
+        pages, pages, {'protocol_version': 3}, 'hash', 'gemini', 'test-model')['criteria'][0]
+    assert result['assessment'] == 'incierto'
+    assert result['evidence_status'] == 'quote_unverified'
+    assert result['quote_verified'] is True
+    assert len(result['evidence']) == 1 and result['evidence'][0]['quote'] == quote
+    assert 'UNSUPPORTED_MODEL_EXPLANATION' not in result['explanation']
+    assert result['limitations']
+
+
+def test_quote_from_unsent_pdf_page_cannot_be_used_as_model_evidence():
+    from backend.app.llm_review import checked_result
+    sent = {'page': 1, 'text': 'The introduction explains the motivation for this university study.'}
+    unsent = {'page': 9, 'text': 'The participants attended a public university in Costa Rica.'}
+    result = checked_result(json.dumps({'assessment': 'apoya',
+        'evidence': [{'page': 9, 'quote': unsent['text']}], 'explanation': 'UNSENT_CLAIM'}),
+        [{'kind': 'inclusion', 'text': 'Universidad de América Latina'}],
+        [sent], [sent, unsent], {'protocol_version': 3}, 'hash', 'gemini', 'test-model')['criteria'][0]
+    assert result['assessment'] == 'incierto'
+    assert result['quote_verified'] is False and result['evidence'] == []
+    assert 'UNSENT_CLAIM' not in result['explanation']
+
+
+def test_incomplete_quantitative_phrase_is_not_accepted_as_empirical_evidence():
+    from backend.app.llm_review import checked_result
+    pages = [{'page': 9, 'text': 'This study used a quantitative approach with a sample of eight students.'}]
+    result = checked_result(json.dumps({'assessment': 'apoya',
+        'evidence': [{'page': 9, 'quote': 'This study used a quantitative'}],
+        'explanation': 'EMPIRICAL_CLAIM_FROM_INCOMPLETE_PHRASE'}),
+        [{'kind': 'inclusion', 'text': 'Investigación primaria empírica.'}],
+        pages, pages, {'protocol_version': 3}, 'hash', 'gemini', 'test-model')['criteria'][0]
+    assert result['quote_verified'] is True
+    assert result['assessment'] == 'incierto' and result['evidence_status'] == 'insufficient_support'
+    assert 'EMPIRICAL_CLAIM_FROM_INCOMPLETE_PHRASE' not in result['explanation']
+    assert result['evidence'][0]['context'] == pages[0]['text']
+
+
+def test_declared_limitation_prevents_positive_assessment_despite_verified_quote():
+    from backend.app.llm_review import checked_result
+    quote = 'The participants attended a public university in Costa Rica.'
+    pages = [{'page': 2, 'text': quote}]
+    result = checked_result(json.dumps({'assessment': 'apoya',
+        'evidence': [{'page': 2, 'quote': quote}],
+        'explanation': 'Se identifica el lugar [1], pero falta evidencia de la técnica.',
+        'limitations': ['No se localizó una descripción de la técnica de IA.']}),
+        [{'kind': 'inclusion', 'text': 'Lugar del estudio y técnica de IA'}],
+        pages, pages, {'protocol_version': 3}, 'hash', 'gemini', 'test-model')['criteria'][0]
+    assert result['quote_verified'] is True
+    assert result['assessment'] == 'incierto'
+    assert result['limitations'] == ['No se localizó una descripción de la técnica de IA.']
+    assert result['evidence'][0]['quote'] == quote
+
+
+def test_geographic_contradiction_of_compound_empirical_criterion_does_not_require_nonempirical_quote():
+    from backend.app.llm_review import checked_result
+    quote = 'The study enrolled Saudi postgraduate students at King Faisal University in Saudi Arabia.'
+    pages = [{'page': 8, 'text': quote}]
+    result = checked_result(json.dumps({'assessment': 'contradice',
+        'evidence': [{'page': 8, 'quote': quote}],
+        'explanation': 'El lugar del estudio está fuera de América Latina [1].'}),
+        [{'kind': 'inclusion', 'text': 'Investigación empírica en universidades de América Latina'}],
+        pages, pages, {'protocol_version': 3}, 'hash', 'gemini', 'test-model')['criteria'][0]
+    assert result['quote_verified'] is True
+    assert result['assessment'] == 'contradice'

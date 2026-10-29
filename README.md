@@ -1,4 +1,4 @@
-# Semantik SLR · versión 0.11.1
+# Semantik SLR · versión 0.20.0
 
 Plataforma local de vigilancia científica para una tesis sobre actualización de revisiones sistemáticas vivas. Frontend React y backend FastAPI. Incluye gestión de protocolos, importación de revisión base, recuperación de artículos, análisis asistido, decisiones humanas, historial y reportes versionados.
 
@@ -19,7 +19,11 @@ Abre `http://127.0.0.1:8000` en tu navegador local. Actualiza con Ctrl+F5 despu�
 
 Se verificó la ejecución con Python 3.12 en Linux y la disponibilidad de paquetes para Windows de 64 bits con Python 3.13. La ejecución de los archivos BAT debe verificarse en Windows. Equipo objetivo: 8 GB de RAM, CPU; el modelo usa dos hilos y lotes pequeños. No se requiere GPU.
 
-## Recorrido de la revisión publicada
+## Novedades actuales
+
+Consulta [la guía de la versión 0.20](docs/version-0.20.md): carga de cualquier revisión base en PDF, propuesta de método con citas mediante Gemini y lectura de evidencia dentro de la aplicación. Las descripciones de versiones anteriores de abajo son históricas. La interfaz sigue en React y los datos en SQLite; Oracle/APEX y SciBERT todavía no están implementados.
+
+## Recorrido anterior de la revisión publicada
 
 1. En **Cargar revisión publicada**, elige el caso preparado de Salas-Pilco y Yang (2022), DOI `10.1186/s41239-022-00326-w`. Solo este DOI tiene hoy una ficha preparada; las revisiones manuales anteriores siguen disponibles.
 2. Abre la revisión creada, adjunta su PDF original con texto seleccionable (hasta 8 MB/80 páginas) y coteja las preguntas, criterios, fuentes y fecha con el documento. La aplicación rechaza un PDF cuyo texto no contenga el DOI o título esperado.

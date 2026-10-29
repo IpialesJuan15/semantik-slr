@@ -99,6 +99,49 @@ def test_report_filters_stale_pdf_and_protocol_proposals(tmp_path):
         assert response.json()['articles'][0]['document_evidence']['proposal'] is None
 
 
+def test_report_renders_all_checked_citations_context_and_limitations(tmp_path):
+    path = tmp_path / 'reports.sqlite3'
+    with TestClient(create_app(path)) as client:
+        rid, aid, sha = seed(client, path)
+        result = save_proposal(path, aid, sha)
+        criterion = result['criteria'][0]
+        criterion.update(
+            assessment='incierto', evidence_status='insufficient_support',
+            quote='Legacy single quote must not duplicate new evidence',
+            explanation='La institución está identificada, pero la técnica no está descrita.',
+            evidence_validation_version=3,
+            evidence=[
+                {'page': 2, 'quote': 'Synthetic institution <script>alert(3)</script>',
+                 'context': 'Synthetic context <img src=x onerror=alert(4)> with participants.'},
+                {'page': 9, 'quote': 'Synthetic tool used for a writing assessment.',
+                 'context': 'Synthetic tool used for a writing assessment.'},
+                {'page': -1, 'quote': 'Invalid citation must stay hidden'},
+                {'page': 3, 'quote': '  '},
+            ],
+            limitations=['No se identifica la técnica <script>alert(5)</script>.'])
+        result['criteria'][1]['evidence'] = [{'page': 3, 'quote': 'Unchecked citation must stay hidden'}]
+        result['criteria'][1]['limitations'] = ['Se necesita evidencia del método.']
+        with connect(path) as db:
+            db.execute('UPDATE document_reviews SET result_json=? WHERE article_id=?',
+                       (json.dumps(result), aid))
+        report, response = snapshot(client, rid)
+        frozen = response.json()['articles'][0]['document_evidence']['proposal']['criteria'][0]
+        assert frozen['evidence'][1]['page'] == 9
+        readable = client.get(f'/api/reports/{report["id"]}.html').text
+        assert 'Página 2; coincidencia textual comprobada.' in readable
+        assert 'Página 9; coincidencia textual comprobada.' in readable
+        assert 'Synthetic institution &lt;script&gt;' in readable
+        assert 'Synthetic context &lt;img' in readable
+        assert readable.count('Synthetic tool used for a writing assessment.') == 1
+        assert 'Límites de la propuesta' in readable
+        assert 'No se identifica la técnica &lt;script&gt;' in readable
+        assert 'Se necesita evidencia del método.' in readable
+        assert 'Legacy single quote must not duplicate' not in readable
+        assert 'Invalid citation must stay hidden' not in readable
+        assert 'Unchecked citation must stay hidden' not in readable
+        assert '<script>' not in readable and '<img src=x' not in readable
+
+
 def test_older_report_without_pdf_evidence_still_renders(tmp_path):
     path = tmp_path / 'reports.sqlite3'
     with TestClient(create_app(path)) as client:

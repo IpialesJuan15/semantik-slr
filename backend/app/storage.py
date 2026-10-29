@@ -65,6 +65,17 @@ def initialize(path):
           protocol_version INTEGER NOT NULL, document_sha256 TEXT NOT NULL,
           model TEXT NOT NULL, result_json TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+        CREATE TABLE IF NOT EXISTS base_documents (
+          review_id INTEGER PRIMARY KEY REFERENCES reviews(id) ON DELETE CASCADE,
+          filename TEXT NOT NULL, sha256 TEXT NOT NULL, page_count INTEGER NOT NULL,
+          characters INTEGER NOT NULL, truncated INTEGER NOT NULL DEFAULT 0,
+          pages_json TEXT NOT NULL, pdf BLOB NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+        CREATE TABLE IF NOT EXISTS base_extractions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+          document_sha256 TEXT NOT NULL, model TEXT NOT NULL, result_json TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
         ''')
         existing = {row['name'] for row in db.execute('PRAGMA table_info(reviews)')}
         for name, definition in {

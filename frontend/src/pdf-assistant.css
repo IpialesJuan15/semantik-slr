@@ -1,41 +1,65 @@
-/* Researcher's reading sequence: local evidence, explanation, then human decision. */
-.pdf-assistant{--pdf-paper:#fff;--pdf-inset:#fcf8f8;--pdf-ink:#3d3132;--pdf-muted:#7e6a6b;--pdf-rule:#ebe2e3;--pdf-annotation:#a25156;--pdf-caution:#956317;border-top:1px solid var(--pdf-rule);margin-top:20px;padding-top:20px;color:var(--pdf-ink);min-width:0}
-.pdf-assistant h5{font-size:18px;line-height:1.35;letter-spacing:-.2px;margin:0 0 8px;font-weight:650}
-.pdf-assistant h6{font-size:14px;font-weight:650;line-height:1.4;margin:0 0 16px;display:flex;align-items:center;gap:8px}
-.pdf-assistant h6>span{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid var(--pdf-rule);border-radius:50%;color:var(--pdf-annotation);font-size:12px;flex-shrink:0}
-.pdf-assistant>p{font-size:13px;max-width:70ch}
-.pdf-reading-step{padding:20px 0;border-bottom:1px solid var(--pdf-rule)}
+/* A reading desk: explanation first, cited text and optional context beneath it. */
+.candidate-document{--pdf-paper:#fff;--pdf-inset:#fcf8f6;--pdf-ink:#3d3132;--pdf-muted:#6b5d5b;--pdf-rule:#e7dcd8;--pdf-annotation:#a13b40;--pdf-caution:#825b17;--pdf-caution-bg:#fff8eb;min-width:0}
+.pdf-assistant{color:var(--pdf-ink);min-width:0}
+.pdf-assistant h5{font-size:18px;line-height:1.35;letter-spacing:-.2px;margin:0;font-weight:650}
+.pdf-assistant h6{font-size:13px;font-weight:650;line-height:1.4;margin:0 0 12px}
+.pdf-assistant p{max-width:75ch}
 .pdf-assistant .field{margin:12px 0;min-width:0}
 .pdf-assistant .field select{width:100%;max-width:100%;min-width:0;background:var(--pdf-inset);min-height:44px;text-overflow:ellipsis}
 .pdf-assistant .field>span{color:var(--pdf-ink);font-size:12px;font-weight:600}
-.pdf-assistant .pdf-help{font-size:12px;line-height:1.6;color:var(--pdf-muted);margin:8px 0 12px;max-width:70ch}
-.pdf-assistant .pdf-selected-criterion{margin:0 0 16px;padding:12px 14px;border-left:3px solid var(--pdf-annotation);background:var(--pdf-inset);font-size:13px;line-height:1.6;color:var(--pdf-ink);overflow-wrap:anywhere}
-.pdf-selected-criterion strong{display:block;color:var(--pdf-annotation);font-size:11px;margin-bottom:4px}
-.pdf-assistant button{min-height:40px;max-width:100%;white-space:normal;text-align:center}
+.pdf-assistant .pdf-help{font-size:12px;line-height:1.6;color:var(--pdf-muted);margin:8px 0 12px}
+.pdf-analysis-controls{margin-top:16px;padding:16px;border:1px solid var(--pdf-rule);border-radius:10px;background:var(--pdf-paper)}
+.pdf-assistant .pdf-selected-criterion{margin:8px 0 16px;padding:0;font-size:13px;line-height:1.6;color:var(--pdf-ink);overflow-wrap:anywhere;background:none;border:0}
+.pdf-settings{border-top:1px solid var(--pdf-rule);padding-top:8px}
+.pdf-settings summary{font-size:12px;min-height:36px;padding:8px 0;color:var(--pdf-ink);cursor:pointer}
+.pdf-settings summary>span{color:var(--pdf-annotation);margin-left:8px;text-decoration:underline;text-underline-offset:3px}
+.pdf-settings-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:0 12px}
+.pdf-assistant button{min-height:44px;max-width:100%;white-space:normal;text-align:center}
 .pdf-assistant button:disabled{cursor:not-allowed}
-.pdf-assistant .pdf-error{background:#faf1f1;color:#8c3f40;border-left:3px solid #ba7c7d;padding:12px;margin:12px 0;font-size:12px;overflow-wrap:anywhere}
+.pdf-generate{width:100%}
+.pdf-assistant .pdf-error{background:#faf1f1;color:#85363b;border-left:3px solid #ba7c7d;padding:12px;margin:12px 0;font-size:13px;overflow-wrap:anywhere}
 .pdf-error p{color:inherit;font-size:inherit;margin-bottom:8px}
-.pdf-passages{margin-top:20px}
-.pdf-preview-summary strong,.pdf-preview-summary span{display:block}
-.pdf-preview-summary strong{font-size:13px;color:var(--pdf-ink)}
-.pdf-preview-summary span{font-size:11px;color:var(--pdf-muted);margin-top:4px}
-.pdf-passage{border-bottom:1px solid var(--pdf-rule);padding:12px 0}
-.pdf-passage summary,.pdf-provenance summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--pdf-annotation);min-height:24px;line-height:1.5}
-.pdf-assistant blockquote{font:14px/1.7 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0;padding:0 0 0 12px;border-left:2px solid #ddb9bb;color:var(--pdf-ink)}
-.pdf-assistant a{font-size:12px;display:inline-block;min-height:28px}
+.pdf-passages{margin-top:16px}
+.pdf-passage{border-bottom:1px solid var(--pdf-rule);padding:8px 0}
+.pdf-passage summary,.pdf-provenance summary,.pdf-inline-context summary,.pdf-pending summary,.pdf-source>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--pdf-annotation);min-height:40px;line-height:1.5;padding:10px 0}
+.pdf-assistant blockquote{font:14px/1.75 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0;padding:0 0 0 12px;border-left:2px solid #ddb9bb;color:var(--pdf-ink)}
+.pdf-assistant a{font-size:12px;display:inline-flex;align-items:center;min-height:36px}
 .pdf-proposals{padding-top:24px}
 .pdf-proposals-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.pdf-proposals-heading h6{margin:0;font-size:15px}
-.pdf-proposals-heading>span{font-size:11px;color:var(--pdf-muted);font-variant-numeric:tabular-nums}
-.pdf-proposal{border-top:1px solid var(--pdf-rule);padding:16px 0}
-.pdf-proposal summary{font-size:12px;font-weight:600;cursor:pointer;line-height:1.6;overflow-wrap:anywhere;color:var(--pdf-ink)}
-.pdf-proposal summary>span{display:inline}
-.pdf-verdict{display:block;margin-top:6px;font-size:11px;color:var(--pdf-annotation);font-weight:600}
+.pdf-proposals-heading>span{font-size:12px;color:var(--pdf-muted);font-variant-numeric:tabular-nums}
+.pdf-review-summary{display:flex;gap:4px 12px;flex-wrap:wrap;font-size:12px;font-variant-numeric:tabular-nums;color:var(--pdf-muted);padding:8px 0}
+.pdf-review-summary>span:last-child{flex-basis:100%;font-size:11px}
+.pdf-proposal{border-top:1px solid var(--pdf-rule);padding:12px 0}
+.pdf-proposal>summary{font-size:13px;font-weight:600;cursor:pointer;line-height:1.6;overflow-wrap:anywhere;color:var(--pdf-ink);padding:4px 0;min-height:44px}
+.pdf-proposal>summary>span{display:inline}
+.pdf-verdict{display:block;margin:4px 0 0;font-size:12px;color:var(--pdf-annotation);font-weight:600}
 .pdf-verdict.uncertain{color:var(--pdf-caution)}
-.pdf-proposal>p{font-size:12px;margin:12px 0 0;line-height:1.6}
-.pdf-proposal .pdf-explanation{color:var(--pdf-ink);margin:8px 0}
-.pdf-proposal small{font-size:11px;color:var(--pdf-muted)}
-.pdf-provenance{margin-top:20px;border-top:1px solid var(--pdf-rule);padding-top:16px;overflow-wrap:anywhere}
-.pdf-provenance p{font-size:11px;margin:10px 0;color:var(--pdf-muted)}
-.pdf-assistant summary:focus-visible{outline:3px solid #d5a4a7;outline-offset:3px;border-radius:3px}
-@media(max-width:600px){.pdf-assistant button{width:100%;min-height:44px}.pdf-assistant h5{font-size:17px}.pdf-assistant blockquote{font-size:13px;padding-left:10px}.pdf-assistant .pdf-selected-criterion{padding:10px 12px}.pdf-proposal summary{font-size:12px}.pdf-assistant a{min-height:40px;display:inline-flex;align-items:center}.pdf-provenance summary,.pdf-passage summary{min-height:32px}}
+.pdf-proposal-body{padding:12px 0 4px}
+.pdf-assistant .pdf-explanation{font-size:14px;line-height:1.75;color:var(--pdf-ink);margin:0 0 16px;white-space:pre-line}
+.pdf-checked-evidence{margin-top:16px}
+.pdf-evidence-card{padding:12px;background:var(--pdf-inset);border:1px solid var(--pdf-rule);border-radius:8px;margin:8px 0 12px}
+.pdf-evidence-heading{display:flex;align-items:baseline;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:11px;color:var(--pdf-muted)}
+.pdf-evidence-heading strong{font-size:12px;color:var(--pdf-ink)}
+.pdf-evidence-card blockquote{margin:12px 0 8px}
+.pdf-inline-context{margin:4px 0;border-top:1px solid var(--pdf-rule)}
+.pdf-inline-context>p{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.8 Georgia,serif;color:var(--pdf-ink);margin:8px 0 12px}
+.pdf-limitations,.pdf-decision-note{background:var(--pdf-caution-bg);color:var(--pdf-caution);padding:12px;border-left:3px solid #c59a56;margin:12px 0;font-size:13px;line-height:1.6}
+.pdf-limitations strong{display:block;font-size:12px}
+.pdf-limitations ul{margin:8px 0 0;padding-left:20px}
+.pdf-limitations li+li{margin-top:4px}
+.pdf-assistant .pdf-decision-note{color:var(--pdf-caution)}
+.pdf-assistant .pdf-no-evidence,.pdf-assistant .pdf-older-result{font-size:12px;line-height:1.6;color:var(--pdf-muted);margin:12px 0}
+.pdf-pending{border-top:1px solid var(--pdf-rule);margin-top:8px}
+.pdf-pending>div{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px}
+.pdf-pending button{font-size:12px;line-height:1.6;text-align:left;padding:10px 12px;background:var(--pdf-paper);border-color:var(--pdf-rule)}
+.pdf-next{margin:12px 0 4px}
+.pdf-provenance{margin-top:16px;border-top:1px solid var(--pdf-rule);padding-top:4px;overflow-wrap:anywhere}
+.pdf-provenance p{font-size:12px;margin:8px 0;color:var(--pdf-muted);line-height:1.6}
+.pdf-source{margin-top:20px;border-top:1px solid var(--pdf-rule);padding-top:4px;overflow-wrap:anywhere}
+.pdf-source>p{font-size:12px;color:var(--pdf-muted);line-height:1.6}
+.pdf-inline-page{margin-top:8px}
+.pdf-inline-page summary{font-size:12px;color:var(--pdf-annotation);padding:8px 0}
+.pdf-full-page{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--pdf-paper);border:1px solid var(--pdf-rule);border-radius:8px;padding:16px;font-family:Georgia,serif;font-size:14px;line-height:1.7;color:var(--pdf-ink)}
+.pdf-full-page:focus-visible{outline:2px solid var(--pdf-annotation);outline-offset:2px}
+.candidate-document summary:focus-visible,.pdf-assistant button:focus-visible{outline:3px solid #d5a4a7;outline-offset:3px;border-radius:3px}
+@media(max-width:600px){.pdf-analysis-controls{padding:12px}.pdf-assistant button{width:100%}.pdf-assistant h5{font-size:17px}.pdf-assistant blockquote{font-size:14px;padding-left:8px}.pdf-proposal>summary{font-size:13px}.pdf-assistant a{min-height:44px}.pdf-review-summary{gap:4px 12px}.pdf-evidence-card{padding:12px}.pdf-proposals-heading{display:block}.pdf-proposals-heading>span{display:block;margin-top:4px}.pdf-settings-fields{grid-template-columns:1fr}}
