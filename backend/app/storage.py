@@ -90,6 +90,8 @@ def initialize(path):
         article_columns = {row['name'] for row in db.execute('PRAGMA table_info(articles)')}
         if 'decision_version' not in article_columns:
             db.execute('ALTER TABLE articles ADD COLUMN decision_version INTEGER')
+        if 'update_cycle' not in article_columns:
+            db.execute('ALTER TABLE articles ADD COLUMN update_cycle INTEGER')
         db.execute("UPDATE jobs SET status='failed',error='El servidor se reinició. Ejecuta el análisis otra vez.' WHERE status='running'")
 
 

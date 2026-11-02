@@ -94,6 +94,14 @@ class PublishedInput(BaseModel):
 class BaseExtractionInput(BaseModel):
     gemini_model: Literal['gemini-3.8-flash', 'gemini-3.5-flash-lite'] = 'gemini-3.5-flash-lite'
 
+class ApplyUpdateInput(BaseModel):
+    cutoff_date: date = Field(description='Nueva fecha de corte de la actualización')
+    @field_validator('cutoff_date')
+    @classmethod
+    def not_future(cls, value):
+        if value > date.today(): raise ValueError('La fecha de corte no puede ser posterior a hoy.')
+        return value
+
 class PublishedMethodInput(BaseModel):
     questions: list[str] = Field(min_length=1, max_length=10)
     inclusion: list[str] = Field(min_length=1, max_length=40)
@@ -343,18 +351,51 @@ def create_app(database_path=None):
             event(db,review_id,'published_base_confirmed',{'doi':base['doi'],'method_changed':changed,'protocol_version':review['protocol_version']+int(changed)})
             return get_published(db,review_id)
 
+    @app.post('/api/reviews/{review_id}/apply-update')
+    def apply_update(review_id:int, payload:ApplyUpdateInput):
+        with connect(path) as db:
+            review=get_review(db,review_id)
+            base_row=db.execute('SELECT * FROM published_bases WHERE review_id=?',(review_id,)).fetchone()
+            if base_row is None: raise HTTPException(422,'Esta revisión no tiene una base publicada. Confirma primero el estudio base.')
+            if not base_row['confirmed']: raise HTTPException(422,'Confirma primero el método del estudio base.')
+            base=json.loads(base_row['snapshot'])
+            previous_cutoff=base['last_included_date']
+            if payload.cutoff_date<=date.fromisoformat(previous_cutoff):
+                raise HTTPException(422,f'La fecha de corte debe ser posterior a {previous_cutoff}.')
+            current_articles=[dict(row) for row in db.execute('SELECT * FROM articles WHERE review_id=? AND update_cycle IS NULL',(review_id,))]
+            candidates=[a for a in current_articles if not is_base_publication(a,base)]
+            pending=[a for a in candidates if a['decision']=='pending']
+            if pending: raise HTTPException(422,f'Quedan {len(pending)} artículo{"s" if len(pending)>1 else ""} pendiente{"s" if len(pending)>1 else ""} de decisión. Decide todos antes de aplicar la actualización.')
+            max_cycle=db.execute('SELECT coalesce(max(update_cycle),0) FROM articles WHERE review_id=?',(review_id,)).fetchone()[0]
+            new_cycle=max_cycle+1
+            included=[a for a in candidates if a['decision']=='included']
+            new_studies=[{'update_cycle':new_cycle,'title':a['title'],'citation':a['authors'] or a['title'],'doi':a['doi'] or '','year':a['year'],'source':a['source'],'decision_reason':a['reason']} for a in included]
+            base.setdefault('studies',[])
+            base['studies'].extend(new_studies)
+            base['original_count']=len(base['studies'])
+            base['last_included_date']=payload.cutoff_date.isoformat()
+            base.setdefault('update_history',[])
+            base['update_history'].append({'cycle':new_cycle,'applied_at':datetime.now(timezone.utc).isoformat(),'previous_cutoff':previous_cutoff,'new_cutoff':payload.cutoff_date.isoformat(),'searched_articles':len(candidates),'included_count':len(included),'excluded_count':len(candidates)-len(included)})
+            new_inclusion=update_inclusion(base)
+            db.execute('UPDATE published_bases SET snapshot=? WHERE review_id=?',(json.dumps({k:v for k,v in base.items() if k not in ('confirmed','created_at')},ensure_ascii=False),review_id))
+            db.execute('UPDATE reviews SET inclusion=?,protocol_version=protocol_version+1 WHERE id=?',(new_inclusion,review_id))
+            db.execute('UPDATE articles SET update_cycle=? WHERE review_id=? AND update_cycle IS NULL',(new_cycle,review_id))
+            event(db,review_id,'update_applied',{'cycle':new_cycle,'previous_cutoff':previous_cutoff,'new_cutoff':payload.cutoff_date.isoformat(),'included_count':len(included),'excluded_count':len(candidates)-len(included),'searched_articles':len(candidates)})
+            return {'cycle':new_cycle,'cutoff_date':payload.cutoff_date.isoformat(),'included_count':len(included),'excluded_count':len(candidates)-len(included),'total_studies':len(base['studies']),'protocol_version':review['protocol_version']+1}
+
     @app.get('/api/reviews')
     def reviews():
         with connect(path) as db:
-            rows = db.execute("SELECT r.*, (SELECT count(*) FROM articles a WHERE a.review_id=r.id) article_count, (SELECT count(*) FROM articles a WHERE a.review_id=r.id AND a.decision='included') included_count FROM reviews r ORDER BY r.id DESC").fetchall()
+            rows = db.execute("SELECT r.*, (SELECT count(*) FROM articles a WHERE a.review_id=r.id AND a.update_cycle IS NULL) article_count, (SELECT count(*) FROM articles a WHERE a.review_id=r.id AND a.decision='included' AND a.update_cycle IS NULL) included_count FROM reviews r ORDER BY r.id DESC").fetchall()
             result=[]
             for row in rows:
                 item={k:row[k] for k in row.keys() if k != 'base_text'}
                 base=base_snapshot(db,row['id'])
                 if base:
-                    legacy=[article for article in db.execute('SELECT title,doi,decision FROM articles WHERE review_id=?',(row['id'],)) if is_base_publication(dict(article),base)]
+                    legacy=[article for article in db.execute('SELECT title,doi,decision FROM articles WHERE review_id=? AND update_cycle IS NULL',(row['id'],)) if is_base_publication(dict(article),base)]
                     item['article_count']-=len(legacy)
                     item['included_count']-=sum(article['decision']=='included' for article in legacy)
+                    item['update_cycles']=len(base.get('update_history',[]))
                 result.append(item)
         return result
 
@@ -448,11 +489,19 @@ def create_app(database_path=None):
         return latest_base_extraction(review_id)
 
     @app.get('/api/reviews/{review_id}/articles')
-    def articles(review_id:int):
+    def articles(review_id:int, cycle:str='current'):
         with connect(path) as db:
             get_review(db,review_id)
             base=base_snapshot(db,review_id)
-            return [{**article_json(row),'is_base_publication':bool(base and is_base_publication(dict(row),base))} for row in db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY score DESC,id DESC',(review_id,))]
+            if cycle=='current':
+                rows=db.execute('SELECT * FROM articles WHERE review_id=? AND update_cycle IS NULL ORDER BY score DESC,id DESC',(review_id,))
+            elif cycle=='all':
+                rows=db.execute('SELECT * FROM articles WHERE review_id=? ORDER BY coalesce(update_cycle,999999),score DESC,id DESC',(review_id,))
+            else:
+                try: cycle_num=int(cycle)
+                except ValueError: raise HTTPException(422,'Parámetro cycle inválido.')
+                rows=db.execute('SELECT * FROM articles WHERE review_id=? AND update_cycle=? ORDER BY score DESC,id DESC',(review_id,cycle_num))
+            return [{**article_json(row),'is_base_publication':bool(base and is_base_publication(dict(row),base))} for row in rows]
 
     @app.get('/api/articles/{article_id}/document')
     def candidate_document(article_id: int):
